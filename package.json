@@ -1,0 +1,49 @@
+{
+  "name": "@swavoti/vula",
+  "version": "1.0.3",
+  "description": "Vula.js",
+  "main": "bin/vula.js",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "bin": {
+    "vula": "bin/vula.js"
+  },
+  "runtime": "deno",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "react",
+    "framework",
+    "rspack",
+    "ssr",
+    "file-routing",
+    "deno",
+    "node"
+  ],
+  "author": "swavoti",
+  "license": "MIT",
+  "dependencies": {
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@rspack/cli": "latest",
+    "@rspack/core": "latest",
+    "@rspack/plugin-react-refresh": "latest",
+    "react-refresh": "latest",
+    "eslint": "latest",
+    "eslint-plugin-react": "latest",
+    "eslint-plugin-react-hooks": "latest",
+    "@typescript-eslint/eslint-plugin": "latest",
+    "@typescript-eslint/parser": "latest",
+    "webpack-dev-middleware": "^7.1.0",
+    "dotenv": "^16.4.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/express": "^4.17.21"
+  }
+}
