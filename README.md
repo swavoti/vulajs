@@ -672,6 +672,28 @@ Yes. Vula pages are standard React components. Use any React library: React Rout
 
 ---
 
+## Troubleshooting
+
+### JSX Type Errors in Deno
+If you see errors like `JSX element implicitly has type 'any'` or `no interface 'JSX.IntrinsicElements' exists` while using Deno, it means the Deno language server is struggling with strict types for React.
+
+**Solution**: Add `"strict": false` to your `deno.json` or `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "strict": false
+  }
+}
+```
+
+### Security Patch: React 19.2.6
+We strongly recommend using **React 19.2.6** or higher. Older versions (like 18.2.0) contain known vulnerabilities that are patched in the 19.x branch. Vula.js defaults to 19.2.6 for all new projects to ensure your application is secure.
+
+---
+
 ## Contributing
 
 1. Fork the repo
