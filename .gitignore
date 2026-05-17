@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .vula-routes.json
+.vula-registry.js
 .env
 .npmrc
 *.log

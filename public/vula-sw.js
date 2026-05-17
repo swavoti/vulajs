@@ -16,6 +16,12 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  // Bypass cache completely for API routes and Vula framework internal endpoints
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_vula/')) {
+    return event.respondWith(fetch(event.request));
+  }
+
   event.respondWith(
     caches.match(event.request).then((response) => {
       return response || fetch(event.request).then((fetchResponse) => {

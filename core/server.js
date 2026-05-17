@@ -13,6 +13,17 @@ async function startServer(port = 3000) {
   const app = express();
   app.use(express.json());
 
+  // Default production security headers
+  app.use((req, res, next) => {
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.removeHeader('X-Powered-By');
+    next();
+  });
+
   // Inject SEO base tags into HTML responses
   app.use((req, res, next) => {
     const originalSend = res.send.bind(res);
@@ -76,7 +87,8 @@ async function startServer(port = 3000) {
             } catch (err) {
               console.error(`[vula] ${method} ${route.path} error:`, err);
               if (!res.headersSent) {
-                res.status(500).json({ error: 'Internal Server Error' });
+                const isProd = process.env.NODE_ENV === 'production';
+                res.status(500).json({ error: isProd ? 'Internal Server Error' : err.message });
               }
             }
           });
