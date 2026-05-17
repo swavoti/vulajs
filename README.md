@@ -2,7 +2,7 @@
   <img src="https://raw.githubusercontent.com/nguyenblacks/vulajs/refs/heads/main/assets/vula.jpeg" alt="Vula.js" width="120" />
 </p>
 
-<h1 align="center">Vula.js</h1>
+<h1 align="center">Vula.js  Experimental </h1>
 
 <p align="center">
   A React framework built on Rspack. File-based routing, API routes, server components, and caching — all in one codebase.
