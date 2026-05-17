@@ -77,9 +77,18 @@ function checkSecurity() {
   if (!fs.existsSync(appDir)) return;
 
   const allowListPath = path.join(process.cwd(), 'vula.scripts.allow.ts');
-  const allowList = fs.readFileSync(allowListPath, 'utf8');
+  const allowListText = fs.readFileSync(allowListPath, 'utf8');
 
-  const scriptRegex = /<script[^>]*src=["']([^"']+)["'][^>]*>/g;
+  // Extract all exact string values in quotes from allow list file
+  const allowedScripts = [];
+  const stringRegex = /["']([^"']+)["']/g;
+  let stringMatch;
+  while ((stringMatch = stringRegex.exec(allowListText)) !== null) {
+    allowedScripts.push(stringMatch[1]);
+  }
+
+  // Use case-insensitive matching for script tag scanning
+  const scriptRegex = /<script[^>]*src=["']([^"']+)["'][^>]*>/gi;
   const files = fs.readdirSync(appDir, { recursive: true });
 
   for (const file of files) {
@@ -93,7 +102,9 @@ function checkSecurity() {
     let match;
     while ((match = scriptRegex.exec(content)) !== null) {
       const src = match[1];
-      if (!allowList.includes(src)) {
+      
+      // Enforce EXACT matching inside the parsed allow list array
+      if (!allowedScripts.includes(src)) {
         console.error(`[vula] BLOCKED: Unverified script in ${file}: ${src}`);
         console.error(`[vula] Add it to vula.scripts.allow.ts or remove it.`);
         process.exit(1);
