@@ -4,6 +4,54 @@ const fs = require('fs');
 
 try { require('dotenv').config(); } catch (_) {}
 
+let nativeMatcher = null;
+try {
+  nativeMatcher = require('./native-router/vula_router.node');
+  console.log('[vula] Native Rust route matching engine loaded successfully!');
+} catch (e) {
+  // Graceful fallback silent warning
+}
+
+/**
+ * High-performance route matching helper.
+ * Leverages native compiled Rust code, falling back to clean JS segments matching.
+ */
+function matchRoute(routePath, activePath) {
+  if (nativeMatcher && typeof nativeMatcher.matchRoute === 'function') {
+    return nativeMatcher.matchRoute(routePath, activePath);
+  }
+
+  // Pure JavaScript Fallback
+  const cleanRoute = routePath.endsWith('/') && routePath !== '/' ? routePath.slice(0, -1) : routePath;
+  const cleanActive = activePath.endsWith('/') && activePath !== '/' ? activePath.slice(0, -1) : activePath;
+
+  const routeSegments = cleanRoute.split('/');
+  const activeSegments = cleanActive.split('/');
+
+  if (routeSegments.length !== activeSegments.length) {
+    return null;
+  }
+
+  const params = {};
+  for (let i = 0; i < routeSegments.length; i++) {
+    const routeSeg = routeSegments[i];
+    const activeSeg = activeSegments[i];
+
+    if (routeSeg === activeSeg) {
+      continue;
+    }
+
+    if (routeSeg.startsWith('[') && routeSeg.endsWith(']')) {
+      const paramName = routeSeg.slice(1, -1);
+      params[paramName] = decodeURIComponent(activeSeg);
+    } else {
+      return null;
+    }
+  }
+  return params;
+}
+
+
 /**
  * Starts the Vula.js development server.
  * Registers API routes, server components, and user middleware from the manifest,
@@ -178,4 +226,4 @@ async function startServer(port = 3000) {
   });
 }
 
-module.exports = { startServer };
+module.exports = { startServer, matchRoute };

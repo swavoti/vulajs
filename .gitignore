@@ -6,3 +6,5 @@ dist/
 .npmrc
 *.log
 .DS_Store
+core/native-router/target/
+core/native-router/*.node
