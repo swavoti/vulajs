@@ -29,13 +29,16 @@ async function startServer(port = 3000) {
     next();
   });
 
-  // Load manifest
+  // Load manifest & registry
   const manifestPath = path.join(process.cwd(), '.vula-routes.json');
-  if (!fs.existsSync(manifestPath)) {
-    console.error('[vula] No .vula-routes.json found. Run `vula dev` or `vula build` first.');
+  const registryPath = path.join(process.cwd(), '.vula-registry.js');
+  
+  if (!fs.existsSync(manifestPath) || !fs.existsSync(registryPath)) {
+    console.error('[vula] No .vula-routes.json or .vula-registry.js found. Run `vula dev` or `vula build` first.');
     process.exit(1);
   }
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const registry = require(registryPath);
 
   // User middleware
   if (manifest.middleware) {
@@ -52,15 +55,22 @@ async function startServer(port = 3000) {
     manifest.apiRoutes.forEach(route => {
       let handler;
       try {
-        handler = require(route.handlerPath);
+        const loader = registry.apiRoutes[route.path];
+        if (!loader) {
+          throw new Error(`Path ${route.path} missing from registry`);
+        }
+        handler = loader();
       } catch (err) {
         console.error(`[vula] Failed to load API handler ${route.path}:`, err.message);
         return;
       }
 
+      // Convert dynamic file segments "/api/users/[id]" -> Express style "/api/users/:id"
+      const expressPath = route.path.replace(/\[([^\]]+)\]/g, ':$1');
+
       ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].forEach(method => {
         if (typeof handler[method] === 'function') {
-          app[method.toLowerCase()](route.path, async (req, res) => {
+          app[method.toLowerCase()](expressPath, async (req, res) => {
             try {
               await handler[method](req, res);
             } catch (err) {
@@ -70,7 +80,7 @@ async function startServer(port = 3000) {
               }
             }
           });
-          console.log(`  ${method} ${route.path}`);
+          console.log(`  ${method} ${expressPath}`);
         }
       });
     });
@@ -79,16 +89,13 @@ async function startServer(port = 3000) {
   // Server component bridge endpoint
   app.post('/_vula/server-component', async (req, res) => {
     const { name, args } = req.body;
-    if (!manifest.serverComponents || !manifest.serverComponents.length) {
-      return res.status(404).json({ error: 'No server components registered' });
-    }
-    const comp = manifest.serverComponents.find(c => c.name === name);
-    if (!comp) {
+    const loader = registry.serverComponents[name];
+    if (!loader) {
       return res.status(404).json({ error: `Server component "${name}" not found` });
     }
 
     try {
-      const handler = require(comp.path);
+      const handler = loader();
       const fn = handler.default || handler;
       const result = await fn(...(args || []));
       res.json({ result });
