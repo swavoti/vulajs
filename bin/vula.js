@@ -118,93 +118,11 @@ if (command === 'dev') {
   });
   child.on('exit', (code) => process.exit(code));
 
-} else if (command === 'create-app') {
-  const appName = process.argv[3];
-  if (!appName) {
-    console.error('[vula] Usage: vula create-app <name>');
-    process.exit(1);
-  }
-
-  if (fs.existsSync(appName)) {
-    console.error(`[vula] "${appName}" already exists.`);
-    process.exit(1);
-  }
-
-  // Scaffold directories
-  fs.mkdirSync(appName);
-  fs.mkdirSync(path.join(appName, 'app'));
-  fs.mkdirSync(path.join(appName, 'app', 'api'));
-  fs.mkdirSync(path.join(appName, 'src'));
-  fs.mkdirSync(path.join(appName, 'public'));
-
-  // app/page.tsx
-  fs.writeFileSync(path.join(appName, 'app', 'page.tsx'),
-`export default function Page() {
-  return (
-    <div style={{ padding: '4rem', fontFamily: 'system-ui' }}>
-      <h1>Your Vula App</h1>
-      <p>Edit <code>app/page.tsx</code> to get started.</p>
-    </div>
-  );
-}
-`);
-
-  // app/api/hello.ts
-  fs.writeFileSync(path.join(appName, 'app', 'api', 'hello.ts'),
-`export async function GET(req, res) {
-  res.json({ status: "ok", message: "Hello from your API" });
-}
-`);
-
-  // vula.scripts.allow.ts
-  fs.writeFileSync(path.join(appName, 'vula.scripts.allow.ts'),
-`export const ALLOWED_SCRIPTS: string[] = [];
-`);
-
-  // tsconfig.json
-  fs.writeFileSync(path.join(appName, 'tsconfig.json'), JSON.stringify({
-    compilerOptions: {
-      target: "ESNext",
-      lib: ["DOM", "DOM.Iterable", "ESNext"],
-      jsx: "react-jsx",
-      types: ["react", "react-dom"],
-      moduleResolution: "Node",
-      strict: true,
-      baseUrl: ".",
-      paths: { "@app/*": ["app/*"] },
-    },
-  }, null, 2));
-
-  // deno.json
-  fs.writeFileSync(path.join(appName, 'deno.json'), JSON.stringify({
-    compilerOptions: {
-      jsx: "react-jsx",
-      jsxImportSource: "react",
-      strict: false,
-    },
-    nodeModulesDir: "auto",
-  }, null, 2));
-
-  // package.json
-  fs.writeFileSync(path.join(appName, 'package.json'), JSON.stringify({
-    name: appName,
-    version: "1.0.0",
-    scripts: { dev: "vula dev", build: "vula build" },
-    dependencies: {
-      "@swavoti/vula": "latest",
-      "react": "^19.2.6",
-      "react-dom": "^19.2.6",
-    },
-  }, null, 2));
-
-  console.log(`[vula] Created ${appName}/`);
-  console.log(`  cd ${appName} && deno install && vula dev`);
-
 } else {
   console.log('Vula.js CLI');
   console.log('');
   console.log('Commands:');
   console.log('  vula dev                Start development server');
   console.log('  vula build              Build for production');
-  console.log('  vula create-app <name>  Scaffold a new project');
 }
+

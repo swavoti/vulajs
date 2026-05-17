@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/vula.jpeg" alt="Vula.js" width="120" />
+  <img src="https://raw.githubusercontent.com/nguyenblacks/vulajs/refs/heads/main/assets/vula.jpeg" alt="Vula.js" width="120" />
 </p>
 
 <h1 align="center">Vula.js</h1>
@@ -47,10 +47,7 @@ It runs on both **Deno** and **Node.js**, and uses **Rspack** (a Rust-based bund
 # Install globally
 npm install -g @swavoti/vula
 
-# Create a new project
-vula create-app my-app
-
-# Enter the project and install dependencies
+# Enter your project and install dependencies
 cd my-app
 deno install    # or: npm install
 
@@ -86,7 +83,7 @@ my-app/
 │   └── router/
 │       └── manifest.js            # Route manifest generator
 ├── bin/
-│   └── vula.js                    # CLI (vula dev, vula build, vula create-app)
+│   └── vula.js                    # CLI (vula dev, vula build)
 ├── vula.scripts.allow.ts          # Security allow list
 ├── rspack.config.js               # Rspack bundler config
 ├── tsconfig.json                  # TypeScript config
@@ -322,7 +319,6 @@ For page-specific SEO (title, description, og:image), set them in your `page.tsx
 |---|---|
 | `vula dev` | Start the development server on port 3000 |
 | `vula build` | Build for production using Rspack |
-| `vula create-app <name>` | Scaffold a new Vula project |
 
 ### `vula dev`
 
@@ -337,16 +333,6 @@ For page-specific SEO (title, description, og:image), set them in your `page.tsx
 2. Runs ESLint
 3. Generates the route manifest
 4. Runs `rspack build` to produce a production bundle in `dist/`
-
-### `vula create-app <name>`
-
-Creates a new directory with:
-- `app/page.tsx` — starter page
-- `app/api/hello.ts` — starter API route
-- `vula.scripts.allow.ts` — empty allow list
-- `tsconfig.json` — TypeScript config with JSX support
-- `deno.json` — Deno config
-- `package.json` — with `@swavoti/vula`, `react`, and `react-dom`
 
 ---
 
@@ -382,6 +368,37 @@ TypeScript config with `react-jsx` transform, path aliases, and type references.
 ### `deno.json`
 
 Deno-specific config for JSX support and `node_modules` directory mode.
+
+---
+
+## Customizing HTML Template
+
+Vula.js uses an `index.html` file as a template for your application. By default, it looks for this file in the **root** of your project.
+
+### Automatic Script Injection
+
+You **do not** need to manually add `<script>` tags to your `index.html`. Rspack automatically detects all entry points (like `src/index.tsx`) and injects the necessary `<script>` and `<link>` tags for you during the build process.
+
+```html
+<!-- index.html (Project Root) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Vula App</title>
+</head>
+<body>
+    <div id="root"></div>
+    <!-- No manual script tags needed! -->
+</body>
+</html>
+```
+
+### Why avoid `public/index.html`?
+
+If you place an `index.html` file inside the `public/` directory, it will be served as a raw static file. Because it hasn't been processed by Rspack, it will **not** have the automatic script injections, which usually results in a blank page.
+
+Always keep your template in the project root and let Vula.js handle the injection for you.
 
 ---
 
@@ -706,5 +723,9 @@ We strongly recommend using **React 19.2.6** or higher. Older versions (like 18.
 
 ## License
 
-MIT © [Swavoti](https://github.com/swavoti/vulajs)
+MIT © [Swavoti](https://github.com/nguyenblacks/vulajs)
+
+---
+
+**Swavoti** is a trademark and its assets are a trademark of **Swavoti South Africa Pty Ltd**.
 

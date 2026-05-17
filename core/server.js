@@ -106,10 +106,10 @@ async function startServer(port = 3000) {
     });
   }
 
-  // Static public assets
+  // Static public assets (ignoring index.html to allow Rspack/Router to handle it)
   const publicDir = path.join(process.cwd(), 'public');
   if (fs.existsSync(publicDir)) {
-    app.use(express.static(publicDir));
+    app.use(express.static(publicDir, { index: false }));
   }
 
   // Frontend serving
@@ -133,7 +133,10 @@ async function startServer(port = 3000) {
       app.get('*', (req, res, next) => {
         const filename = path.join(compiler.outputPath, 'index.html');
         compiler.outputFileSystem.readFile(filename, (err, result) => {
-          if (err) return next(err);
+          if (err) {
+            console.error(`[vula] Error reading ${filename} from memory:`, err.message);
+            return next(); // Fall through to 404 or fallback
+          }
           res.set('content-type', 'text/html');
           res.send(result);
         });

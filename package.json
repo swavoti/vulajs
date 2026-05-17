@@ -1,6 +1,6 @@
 {
   "name": "@swavoti/vula",
-  "version": "1.0.3",
+  "version": "1.0.7",
   "description": "Vula.js",
   "main": "bin/vula.js",
   "publishConfig": {
@@ -11,6 +11,14 @@
     "vula": "bin/vula.js"
   },
   "runtime": "deno",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nguyenblacks/vulajs.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nguyenblacks/vulajs/issues"
+  },
+  "homepage": "https://github.com/nguyenblacks/vulajs#readme",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

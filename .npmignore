@@ -1,7 +1,8 @@
 node_modules/
-dist/
-.vula-routes.json
-.env
+.git/
 .npmrc
-*.log
+.vula-routes.json
+dist/
+.env
 .DS_Store
+*.log
