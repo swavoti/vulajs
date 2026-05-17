@@ -2,14 +2,33 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 
-try { require('dotenv').config(); } catch (_) {}
+try { require('dotenv').config(); } catch (_) { }
 
 let nativeMatcher = null;
 try {
+  // 1. Try local dev binary first
   nativeMatcher = require('./native-router/vula_router.node');
-  console.log('[vula] Native Rust route matching engine loaded successfully!');
 } catch (e) {
-  // Graceful fallback silent warning
+  // 2. Try pre-compiled platform-specific binary based on OS/Arch
+  const platform = process.platform;
+  const arch = process.arch;
+  try {
+    if (platform === 'linux' && arch === 'x64') {
+      nativeMatcher = require('./native-router/vula_router.linux-x64.node');
+    } else if (platform === 'darwin' && arch === 'arm64') {
+      nativeMatcher = require('./native-router/vula_router.darwin-arm64.node');
+    } else if (platform === 'darwin' && arch === 'x64') {
+      nativeMatcher = require('./native-router/vula_router.darwin-x64.node');
+    } else if (platform === 'win32' && arch === 'x64') {
+      nativeMatcher = require('./native-router/vula_router.win32-x64.node');
+    }
+  } catch (err) {
+    // Graceful fallback silent warning
+  }
+}
+
+if (nativeMatcher) {
+  console.log('[vula] Native Rust route matching engine loaded successfully!');
 }
 
 /**
@@ -91,7 +110,7 @@ async function startServer(port = 3000) {
   // Load manifest & registry
   const manifestPath = path.join(process.cwd(), '.vula-routes.json');
   const registryPath = path.join(process.cwd(), '.vula-registry.js');
-  
+
   if (!fs.existsSync(manifestPath) || !fs.existsSync(registryPath)) {
     console.error('[vula] No .vula-routes.json or .vula-registry.js found. Run `vula dev` or `vula build` first.');
     process.exit(1);

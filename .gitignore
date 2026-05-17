@@ -7,4 +7,4 @@ dist/
 *.log
 .DS_Store
 core/native-router/target/
-core/native-router/*.node
+core/native-router/vula_router.node
