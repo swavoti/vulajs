@@ -1,0 +1,83 @@
+{
+  "name": "@swavoti/vula",
+  "version": "2.0.6",
+  "description": "Vula.js — React SSR Framework",
+  "main": "bin/vula.js",
+  "exports": {
+    ".": "./bin/vula.js",
+    "./server": "./core/RSC/server.js",
+    "./core/server.js": "./core/server.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "bin": {
+    "vula": "bin/vula.js"
+  },
+  "runtime": "deno",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/swavoti/vulajs.git"
+  },
+  "bugs": {
+    "url": "https://github.com/swavoti/vulajs/issues"
+  },
+  "homepage": "https://github.com/swavoti/vulajs#readme",
+  "scripts": {
+    "build:wasm": "node scripts/build-wasm.js",
+    "test": "node --test core/router/manifest.test.js core/wasm/runtime.test.js core/server.security.test.js core/stream/stream.test.js"
+  },
+  "keywords": [
+    "react",
+    "framework",
+    "rspack",
+    "ssr",
+    "file-routing",
+    "deno",
+    "node"
+  ],
+  "author": "swavoti",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-typescript": "^7.29.7",
+    "@rspack/cli": "latest",
+    "@rspack/core": "latest",
+    "@rspack/dev-server": "latest",
+    "@rspack/plugin-react-refresh": "latest",
+    "@swavoti/image-opti": "latest",
+    "@swavoti/video-opti": "latest",
+    "@types/json-schema": "^7.0.15",
+    "babel-loader": "^9.1.3",
+    "babel-plugin-react-compiler": "latest",
+    "chokidar": "^5.0.0",
+    "cookie": "^0.6.0",
+    "cross-env": "^7.0.3",
+    "dotenv": "^16.4.5",
+    "esbuild": "^0.20.0",
+    "esbuild-register": "^3.5.0",
+    "express": "^4.18.2",
+    "http-proxy": "^1.18.1",
+    "js-yaml": "^4.1.0",
+    "path-to-regexp": "^6.2.2",
+    "react-refresh": "latest",
+    "webpack-dev-middleware": "^7.1.0",
+    "webpack-hot-middleware": "^2.26.1",
+    "ws": "^8.21.3"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@typescript-eslint/eslint-plugin": "latest",
+    "@typescript-eslint/parser": "latest",
+    "eslint": "latest",
+    "eslint-plugin-react": "latest",
+    "eslint-plugin-react-hooks": "latest"
+  }
+}

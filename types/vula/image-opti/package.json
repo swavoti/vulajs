@@ -1,0 +1,9 @@
+{
+  "name": "@swavoti/image-opti",
+  "version": "1.0.0",
+  "description": "Vula on-the-fly image optimization middleware using Sharp",
+  "main": "index.js",
+  "dependencies": {
+    "sharp": "^0.33.2"
+  }
+}

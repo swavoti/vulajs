@@ -1,0 +1,10 @@
+node_modules/
+.swvula/
+dist/
+.vula-routes.json
+.vula-routes.client.json
+.env
+.env.*
+*.tgz
+*.log
+.DS_Store

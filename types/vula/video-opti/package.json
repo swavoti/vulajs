@@ -1,0 +1,11 @@
+{
+  "name": "@swavoti/video-opti",
+  "version": "1.0.0",
+  "description": "Built-in FFmpeg video optimization and HLS chunking for Vula.js",
+  "main": "index.js",
+  "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.7",
+    "@ffmpeg/core": "^0.12.4",
+    "@ffmpeg/util": "^0.12.1"
+  }
+}

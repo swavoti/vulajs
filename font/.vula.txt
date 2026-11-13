@@ -1,0 +1,6 @@
+# Vula.js Font Optimization Rules
+
+1. Format: Use WOFF2 for maximum compression and modern browser support.
+2. Loading: Use `font-display: swap` to ensure text remains visible during font load.
+3. Subsetting: Remove unused glyphs in production builds to reduce file size.
+4. Preloading: Automatically inject `<link rel="preload">` tags for critical fonts.
