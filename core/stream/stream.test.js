@@ -90,19 +90,25 @@ function buildMaskedWsFrame(opcode, data) {
   return Buffer.concat([header, mask, masked]);
 }
 
-function connectRawWs(port, requestPath) {
+function connectRawWs(port, requestPath, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const key = crypto.randomBytes(16).toString('base64');
+    const headers = {
+      Origin: `http://127.0.0.1:${port}`,
+      Connection: 'Upgrade',
+      Upgrade: 'websocket',
+      'Sec-WebSocket-Key': key,
+      'Sec-WebSocket-Version': '13',
+      ...extraHeaders,
+    };
+    for (const [k, v] of Object.entries(headers)) {
+      if (v === undefined || v === null) delete headers[k];
+    }
     const req = http.request({
       host: '127.0.0.1',
       port,
       path: requestPath,
-      headers: {
-        Connection: 'Upgrade',
-        Upgrade: 'websocket',
-        'Sec-WebSocket-Key': key,
-        'Sec-WebSocket-Version': '13',
-      },
+      headers,
     });
     req.on('upgrade', (res, socket, head) => {
       let buf = head && head.length ? Buffer.from(head) : Buffer.alloc(0);
@@ -176,28 +182,30 @@ function connectRawWs(port, requestPath) {
   });
 }
 
-test('experimental webrtc-stream flag defaults off and gates route registration & CSP', () => {
+test('streaming is enabled globally by default and gates route registration & CSP when disabled', () => {
   const defaults = loadConfig(tmpdir());
-  assert.equal(defaults.experimental['webrtc-stream'], false);
+  assert.equal(defaults.streaming.enabled, true);
+  assert.equal(defaults.streaming.global, true);
 
+  const disabledConfig = {
+    ...defaults,
+    streaming: { ...defaults.streaming, enabled: false, global: false },
+  };
   const disabledApp = createMiniApp();
-  assert.equal(registerStreamRoutes(disabledApp, { manifest: { streamSurfaces: [] }, config: defaults }), null);
+  assert.equal(registerStreamRoutes(disabledApp, { manifest: { streamSurfaces: [] }, config: disabledConfig }), null);
   assert.equal(disabledApp.routes.length, 0);
 
-  const prodCspOff = buildCspHeader(true, 'n1', false, defaults.experimental);
+  const prodCspOff = buildCspHeader(true, 'n1', false, disabledConfig);
   assert.ok(prodCspOff.includes("connect-src 'self';"));
 
-  const enabledConfig = {
-    ...defaults,
-    experimental: { ...defaults.experimental, 'webrtc-stream': true },
-  };
-  const prodCspOn = buildCspHeader(true, 'n1', false, enabledConfig.experimental);
+  const prodCspOn = buildCspHeader(true, 'n1', false, defaults);
   assert.ok(prodCspOn.includes("connect-src 'self' ws: wss:;"));
   assert.ok(!prodCspOn.includes("'unsafe-eval'"));
 
   const enabledApp = createMiniApp();
-  const mgr = registerStreamRoutes(enabledApp, { manifest: { streamSurfaces: [] }, config: enabledConfig });
+  const mgr = registerStreamRoutes(enabledApp, { manifest: { streamSurfaces: [] }, config: defaults });
   assert.ok(mgr);
+  mgr.destroyAll();
   assert.deepEqual(
     enabledApp.routes.map((r) => `${r.method} ${r.path}`),
     ['GET /_vula/stream/client.js', 'POST /_vula/stream/ticket', 'POST /_vula/stream/signal']
@@ -285,15 +293,16 @@ test('end-to-end auth, CSRF, on-demand ticket, server-hidden state, and WebSocke
 
   const config = {
     ...loadConfig(workDir),
-    experimental: {
-      'webrtc-stream': true,
-      'webrtc-stream-codec': 'vp8',
-      'webrtc-stream-fps': 60,
-      'webrtc-stream-max-width': 800,
-      'webrtc-stream-max-height': 600,
-      'webrtc-stream-idle-timeout-ms': 5000,
-      'webrtc-stream-max-sessions': 4,
-      'webrtc-ice-servers': [],
+    streaming: {
+      enabled: true,
+      global: true,
+      codec: 'vp8',
+      quality: 'hd',
+      fps: 60,
+      'max-width': 800,
+      'max-height': 600,
+      'idle-timeout-ms': 5000,
+      'max-sessions': 4,
     },
   };
   const manifest = {
@@ -335,6 +344,7 @@ test('end-to-end auth, CSRF, on-demand ticket, server-hidden state, and WebSocke
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => {
     streamManager.destroyAll();
+    server.closeAllConnections?.();
     return new Promise((resolve) => server.close(resolve));
   });
 
@@ -393,6 +403,16 @@ test('end-to-end auth, CSRF, on-demand ticket, server-hidden state, and WebSocke
   const sigData = await sigRes.json();
   assert.equal(sigData.wsPath, '/_vula/stream/ws');
 
+  // Cross-origin or missing Origin on WS upgrade must fail with 403
+  await assert.rejects(
+    connectRawWs(port, `${sigData.wsPath}?ticket=${encodeURIComponent(ticketInfo.ticket)}`, { Origin: 'https://evil.com' }),
+    /403/
+  );
+  await assert.rejects(
+    connectRawWs(port, `${sigData.wsPath}?ticket=${encodeURIComponent(ticketInfo.ticket)}`, { Origin: undefined }),
+    /403/
+  );
+
   // 5. Connect over real WebSocket and receive initial ready + frame #1
   assert.equal(streamManager.getActiveCount(), 0);
   const ws = await connectRawWs(port, `${sigData.wsPath}?ticket=${encodeURIComponent(ticketInfo.ticket)}`);
@@ -443,9 +463,279 @@ test('end-to-end auth, CSRF, on-demand ticket, server-hidden state, and WebSocke
   assert.equal(resumeFrameMsg.isBinary, true);
   assert.equal(decodeFramePacket(resumeFrameMsg.data).keyframe, true);
 
-  // 8. Disconnect cleans up session on the server
+  // 8. Disconnect cleans up session on the server and burns ticket against replay
   ws.close();
   await new Promise((resolve) => setTimeout(resolve, 40));
   assert.equal(streamManager.getActiveCount(), 0);
   assert.equal(globalThis.__lastStreamDestroyed(), true);
+
+  await assert.rejects(
+    connectRawWs(port, `${sigData.wsPath}?ticket=${encodeURIComponent(ticketInfo.ticket)}`),
+    /401/
+  );
+});
+
+test('config normalizes top-level streaming and --global / VULA_STREAM_GLOBAL', (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vula-global-cfg-'));
+  t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+
+  fs.writeFileSync(
+    path.join(workDir, 'vulaism.config.yaml'),
+    'streaming:\n  enabled: "--global"\n  global: false\n'
+  );
+  const cfgStringGlobal = loadConfig(workDir);
+  assert.equal(cfgStringGlobal.streaming.enabled, true);
+  assert.equal(cfgStringGlobal.streaming.global, true);
+
+  fs.writeFileSync(
+    path.join(workDir, 'vulaism.config.yaml'),
+    'streaming:\n  enabled: true\n  global: false\n'
+  );
+  const prevEnv = process.env.VULA_STREAM_GLOBAL;
+  process.env.VULA_STREAM_GLOBAL = '1';
+  t.after(() => {
+    if (prevEnv === undefined) delete process.env.VULA_STREAM_GLOBAL;
+    else process.env.VULA_STREAM_GLOBAL = prevEnv;
+  });
+
+  const cfgCliGlobal = loadConfig(workDir);
+  assert.equal(cfgCliGlobal.streaming.enabled, true);
+  assert.equal(cfgCliGlobal.streaming.global, true);
+});
+
+test('global stream surface __global__ renders app pages on server and navigates over WS', async (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vula-global-stream-'));
+  t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+
+  const appDir = path.join(workDir, 'app');
+  const recipesDir = path.join(appDir, 'recipes');
+  fs.mkdirSync(recipesDir, { recursive: true });
+
+  const homePagePath = path.join(appDir, 'page.js');
+  const recipesPagePath = path.join(recipesDir, 'page.js');
+  const reactPath = require.resolve('react');
+
+  fs.writeFileSync(homePagePath, `
+    const React = require(${JSON.stringify(reactPath)});
+    module.exports = function HomePage() {
+      return React.createElement('div', null,
+        React.createElement('h1', null, 'Welcome Kitchen'),
+        React.createElement('a', { href: '/recipes', className: 'hh-btn' }, 'Browse Recipes')
+      );
+    };
+  `);
+  fs.writeFileSync(recipesPagePath, `
+    const React = require(${JSON.stringify(reactPath)});
+    module.exports = function RecipesPage() {
+      return React.createElement('div', null,
+        React.createElement('h1', null, 'All Recipes'),
+        React.createElement('p', null, 'Tomato rigatoni')
+      );
+    };
+  `);
+
+  const manifest = {
+    routes: [
+      { path: '/', componentPath: homePagePath },
+      { path: '/recipes', componentPath: recipesPagePath },
+    ],
+    streamSurfaces: [],
+  };
+  const wasmRuntime = {
+    match(pathname) {
+      return manifest.routes.findIndex((r) => r.path === pathname);
+    },
+  };
+
+  const config = {
+    ...loadConfig(workDir),
+    app: { name: 'Global Test Kitchen', lang: 'en' },
+    streaming: {
+      enabled: true,
+      global: true,
+      codec: 'vp8',
+      quality: 'hd',
+      fps: 60,
+      'max-width': 1280,
+      'max-height': 720,
+      'idle-timeout-ms': 5000,
+      'max-sessions': 4,
+      'allow-console-logs': false,
+      'dynamic-loading': true,
+    },
+  };
+
+  const securityMw = createSecurityMiddleware({ config, isDev: false, vulaVersion: '2.0.6' });
+  const csrfMw = csrfProtection([]);
+  const routeTable = new Map();
+  const miniApp = {
+    get(p, h) { routeTable.set(`GET ${p}`, h); },
+    post(p, h) { routeTable.set(`POST ${p}`, h); },
+  };
+  const streamManager = registerStreamRoutes(miniApp, {
+    manifest,
+    config,
+    wasmRuntime,
+    cwd: workDir,
+    isDev: false,
+  });
+
+  const server = http.createServer(async (req, res) => {
+    enhanceResponse(res);
+    req.protocol = 'http';
+    await new Promise((resolve) => securityMw(req, res, resolve));
+    if (res.writableEnded) return;
+    const urlPath = new URL(req.url, 'http://127.0.0.1').pathname;
+    const handler = routeTable.get(`${req.method} ${urlPath}`);
+    if (!handler) return res.status(404).send('Not Found');
+    if (req.method === 'POST') {
+      csrfMw(req, res, () => {});
+      if (res.writableEnded) return;
+      req.body = await readJsonBody(req);
+    }
+    await handler(req, res);
+  });
+
+  attachStreamUpgradeHandler(server, streamManager);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    streamManager.destroyAll();
+    server.closeAllConnections?.();
+    return new Promise((resolve) => server.close(resolve));
+  });
+
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const originHeaders = {
+    Origin: baseUrl,
+    Referer: `${baseUrl}/`,
+    'Content-Type': 'application/json',
+  };
+
+  const ticketRes = await fetch(`${baseUrl}/_vula/stream/ticket`, {
+    method: 'POST',
+    headers: originHeaders,
+    body: JSON.stringify({ surface: '__global__', width: 800, height: 600, dpr: 1, params: { path: '/' } }),
+  });
+  assert.equal(ticketRes.status, 200);
+  const ticketJson = await ticketRes.json();
+  assert.ok(ticketJson.ticket);
+
+  const ws = await connectRawWs(port, `/_vula/stream/ws?ticket=${encodeURIComponent(ticketJson.ticket)}`);
+
+  // Should receive title control + ready control + initial binary frame
+  let gotReady = false;
+  let gotTitle = false;
+  let firstFrame = null;
+  for (let i = 0; i < 4 && !firstFrame; i++) {
+    const msg = await ws.nextMessage();
+    if (msg.isBinary) {
+      firstFrame = decodeFramePacket(msg.data);
+    } else {
+      const ctrl = JSON.parse(msg.data);
+      if (ctrl.type === 'ready') gotReady = true;
+      if (ctrl.type === 'title') gotTitle = ctrl.title.includes('Welcome Kitchen');
+    }
+  }
+  assert.equal(gotReady, true);
+  assert.equal(gotTitle, true);
+  assert.ok(firstFrame);
+  assert.equal(firstFrame.keyframe, true);
+  const rgba = zlib.inflateSync(firstFrame.payload);
+  // Top header pixel should be crisp #FFFFFF
+  assert.equal(rgba[0], 0xFF);
+  assert.equal(rgba[1], 0xFF);
+  assert.equal(rgba[2], 0xFF);
+
+  // Simulate popstate navigation to /recipes and verify new title + binary frame
+  ws.sendText(JSON.stringify({ type: 'popstate', path: '/recipes' }));
+  let gotRecipesTitle = false;
+  let gotRecipesFrame = false;
+  for (let i = 0; i < 4 && !gotRecipesFrame; i++) {
+    const msg = await ws.nextMessage();
+    if (msg.isBinary) {
+      gotRecipesFrame = true;
+    } else {
+      const ctrl = JSON.parse(msg.data);
+      if (ctrl.type === 'title' && ctrl.title.includes('All Recipes')) {
+        gotRecipesTitle = true;
+      }
+    }
+  }
+  assert.equal(gotRecipesTitle, true);
+  assert.equal(gotRecipesFrame, true);
+
+  ws.close();
+});
+
+test('config defaults and dom-event/dom-sync protocol validation for global DOM stream', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { validateInputEvent, sanitizeControlMessage } = require('./protocol.js');
+
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vula-stream-opts-'));
+  try {
+    const cfg = loadConfig(workDir);
+    assert.equal(cfg.streaming.enabled, true);
+    assert.equal(cfg.streaming.global, true);
+    assert.equal(cfg.streaming['allow-console-logs'], false);
+    assert.equal(cfg.streaming['dynamic-loading'], true);
+    assert.equal(cfg.streaming.quality, 'hd');
+
+    fs.writeFileSync(
+      path.join(workDir, 'vulaism.config.yaml'),
+      'streaming:\n  enabled: true\n  global: true\n  quality: "lossless"\n  allow-console-logs: true\n'
+    );
+    const cleanYamlCfg = loadConfig(workDir);
+    assert.equal(cleanYamlCfg.streaming.enabled, true);
+    assert.equal(cleanYamlCfg.streaming.global, true);
+    assert.equal(cleanYamlCfg.streaming.quality, 'lossless');
+    assert.equal(cleanYamlCfg.streaming['allow-console-logs'], true);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+
+  const validEvt = validateInputEvent({
+    type: 'dom-event',
+    event: 'click',
+    vid: 'v42',
+    href: '/recipes',
+  });
+  assert.deepEqual(validEvt, {
+    type: 'dom-event',
+    event: 'click',
+    vid: 'v42',
+    href: '/recipes',
+    value: '',
+    checked: false,
+  });
+
+  // External href must be stripped
+  const extEvt = validateInputEvent({
+    type: 'dom-event',
+    event: 'click',
+    vid: 'v1',
+    href: 'https://evil.example/phish',
+  });
+  assert.equal(extEvt.href, '');
+
+  const syncMsg = sanitizeControlMessage({
+    type: 'dom-sync',
+    path: '/recipes',
+    title: 'All Recipes',
+    html: '<div data-vid="v1">Ok</div>',
+  });
+  assert.deepEqual(syncMsg, {
+    type: 'dom-sync',
+    path: '/recipes',
+    title: 'All Recipes',
+    html: '<div data-vid="v1">Ok</div>',
+  });
 });

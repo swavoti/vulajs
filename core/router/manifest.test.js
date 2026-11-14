@@ -38,3 +38,19 @@ test('adds browser-relative client paths for static and dynamic pages', (t) => {
   assert.deepEqual(Object.keys(clientManifest), ['routes']);
   assert.ok(clientManifest.routes.every((route) => Object.keys(route).sort().join(',') === 'clientPath,path'));
 });
+
+test('generates single-slash API route paths for root and nested api handlers', (t) => {
+  const appDir = mkdtempSync(join(tmpdir(), 'vula-api-routes-'));
+  t.after(() => rmSync(appDir, { recursive: true, force: true }));
+
+  mkdirSync(join(appDir, 'api', 'users'), { recursive: true });
+  writeFileSync(join(appDir, 'api', 'hello.ts'), 'export async function GET() {}');
+  writeFileSync(join(appDir, 'api', 'users', 'index.ts'), 'export async function GET() {}');
+  writeFileSync(join(appDir, 'api', 'users', '[id].ts'), 'export async function GET() {}');
+
+  const { apiRoutes } = generateRouteManifest(appDir);
+  assert.deepEqual(
+    apiRoutes.map((r) => r.path).sort(),
+    ['/api/hello', '/api/users', '/api/users/:id']
+  );
+});

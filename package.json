@@ -1,12 +1,23 @@
 {
   "name": "@swavoti/vula",
-  "version": "2.0.6",
+  "version": "12.3.0",
   "description": "Vula.js — React SSR Framework",
   "main": "bin/vula.js",
   "exports": {
     ".": "./bin/vula.js",
+    "./client": {
+      "types": "./core/client/index.d.ts",
+      "default": "./core/client/index.js"
+    },
     "./server": "./core/RSC/server.js",
     "./core/server.js": "./core/server.js"
+  },
+  "typesVersions": {
+    "*": {
+      "client": [
+        "./core/client/index.d.ts"
+      ]
+    }
   },
   "publishConfig": {
     "access": "public",

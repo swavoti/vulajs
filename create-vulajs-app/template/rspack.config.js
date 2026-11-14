@@ -4,6 +4,7 @@ const { ReactRefreshRspackPlugin } = require('@rspack/plugin-react-refresh');
 const rspack = require('@rspack/core');
 
 module.exports = defineConfig({
+  lazyCompilation: false,
   entry: {
     main: './src/index.tsx',
   },
@@ -47,7 +48,7 @@ module.exports = defineConfig({
     new ReactRefreshRspackPlugin(),
   ],
   devServer: {
-    port: 3000,
+    port: 3030,
     hot: true,
     historyApiFallback: true,
     static: { directory: path.join(__dirname, 'public') },

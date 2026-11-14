@@ -1,4 +1,5 @@
 <p align="center">
+  <img src="https://raw.githubusercontent.com/nguyenblacks/vulajs/refs/heads/main/assets/vula.jpeg" alt="Vula.js" width="120" />
   <img src="https://raw.githubusercontent.com/swavoti/vulajs/refs/heads/main/assets/vula.jpeg" alt="Vula.js" width="120" />
 </p>
 
@@ -881,6 +882,7 @@ We strongly recommend using **React 19.2.6** or higher. Older versions (like 18.
 
 ## License
 
+MIT © [Swavoti](https://github.com/nguyenblacks/vulajs)
 MIT © [Swavoti](https://github.com/swavoti/vulajs)
 
 ---

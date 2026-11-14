@@ -16,21 +16,37 @@ const {
 const { createStreamManager } = require('./session-manager.js');
 const { hasWebRtcPeerSupport } = require('./webrtc-peer.js');
 
+const { resolveStreamingConfig } = require('../config.js');
+
 /**
- * Registers the experimental on-demand WebRTC/WebCodecs streaming endpoints on an Express app.
- * No-ops unless `config.experimental['webrtc-stream'] === true`.
+ * Registers the stable server streaming endpoints on an Express app.
+ * Enabled globally by default unless `config.streaming.enabled === false`.
  */
-function registerStreamRoutes(app, { manifest, config, getAuthHook, isDev = false }) {
-  if (!config?.experimental?.['webrtc-stream']) {
+function registerStreamRoutes(app, { manifest, manifestPath, config, wasmRuntime, cwd, serverRef, getAuthHook, isDev = false }) {
+  const streamCfg = resolveStreamingConfig(config);
+  if (!streamCfg.enabled) {
     return null;
   }
 
-  const streamManager = createStreamManager({ manifest, config, getAuthHook });
+  if (process.env.VULA_STREAM_WARMUP === '1' && process.env.VULA_STREAM_NO_CDP !== '1' && streamCfg.global) {
+    const { warmUpBrowser } = require('./cdp-renderer.js');
+    warmUpBrowser();
+  }
+
+  const streamManager = createStreamManager({
+    manifest,
+    manifestPath,
+    config,
+    wasmRuntime,
+    cwd,
+    serverRef,
+    getAuthHook,
+  });
   const clientScript = getStreamClientScript();
 
   app.get('/_vula/stream/client.js', (req, res) => {
     res.set({
-      'cache-control': isDev ? 'no-store' : 'public, max-age=300',
+      'cache-control': 'no-store, no-cache, must-revalidate',
       'content-type': 'application/javascript; charset=utf-8',
       'x-content-type-options': 'nosniff',
     }).send(clientScript);

@@ -49,16 +49,22 @@ server:
   # Trust X-Forwarded-* headers (set true when behind a reverse proxy)
   trust-proxy: false
 
-experimental:
-  # Enable on-demand WebRTC + WebCodecs frame streaming (keeps surface code on the server)
-  webrtc-stream: false
-  # Preferred WebCodecs codec when encoder is available: "vp8" | "vp9" | "h264" | "av1"
-  webrtc-stream-codec: "vp8"
+streaming:
+  # Server-side streaming is enabled globally by default (keeps application logic and bundles on the server)
+  enabled: true
+  # Stream every matched page route from the server without shipping JS chunks/hydration
+  global: true
+  # Visual quality preset for canvas surfaces: "hd" | "lossless" | "balanced"
+  quality: "hd"
+  # Preferred encoder format for *.stream.* canvas surfaces: "vp8" | "vp9" | "h264" | "av1"
+  codec: "vp8"
   # Max stream FPS and capped viewport dimensions
-  webrtc-stream-fps: 30
-  webrtc-stream-max-width: 1920
-  webrtc-stream-max-height: 1080
+  fps: 30
+  max-width: 1920
+  max-height: 1080
   # Idle timeout (ms) before tearing down inactive stream sessions
-  webrtc-stream-idle-timeout-ms: 60000
-  # Optional ICE servers for WebRTC peer connections (e.g. [{ urls: "stun:stun.l.google.com:19302" }])
-  webrtc-ice-servers: []
+  idle-timeout-ms: 60000
+  # Forward server/site console.* logs to the client browser while streaming (keep false to avoid leaking internal site logs)
+  allow-console-logs: false
+  # Progressively load and stream UI components one-by-one as they paint to minimize cold-start latency
+  dynamic-loading: true

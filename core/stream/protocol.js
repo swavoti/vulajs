@@ -12,6 +12,8 @@ const CODEC_IDS = Object.freeze({
   av1: 0x04,
   rgba: 0x10,
   'rgba-deflate': 0x11,
+  jpeg: 0x12,
+  png: 0x13,
 });
 
 const CODEC_NAMES = Object.freeze(
@@ -28,6 +30,8 @@ const ALLOWED_INPUT_TYPES = new Set([
   'pointerdown',
   'pointerup',
   'wheel',
+  'scroll-to',
+  'dom-event',
   'keydown',
   'keyup',
   'input',
@@ -42,6 +46,10 @@ const ALLOWED_CONTROL_TYPES = new Set([
   'cursor',
   'nav',
   'title',
+  'scroll',
+  'console',
+  'dom-sync',
+  'dom-patch',
   'input-focus',
   'input-blur',
   'clipboard',
@@ -225,6 +233,39 @@ function validateInputEvent(raw, bounds = { maxWidth: 1920, maxHeight: 1080 }) {
         deltaX: Math.max(-2000, Math.min(2000, Number(raw.deltaX) || 0)),
         deltaY: Math.max(-2000, Math.min(2000, Number(raw.deltaY) || 0)),
       };
+    case 'scroll-to':
+      return {
+        type,
+        x: Math.max(0, Math.min(200000, Math.round(Number(raw.x) || 0))),
+        y: Math.max(0, Math.min(200000, Math.round(Number(raw.y) || 0))),
+      };
+    case 'dom-event': {
+      const evName = ['click', 'input', 'change', 'submit'].includes(raw.event) ? raw.event : null;
+      if (!evName) return null;
+      const out = {
+        type,
+        event: evName,
+        vid: typeof raw.vid === 'string' ? raw.vid.slice(0, 64) : '',
+        href: typeof raw.href === 'string' && raw.href.startsWith('/') && !raw.href.startsWith('//')
+          ? raw.href.slice(0, 1024)
+          : '',
+        value: typeof raw.value === 'string' ? raw.value.slice(0, 8192) : '',
+        checked: Boolean(raw.checked),
+      };
+      if (typeof raw.tag === 'string' && /^[a-zA-Z0-9_-]{1,24}$/.test(raw.tag)) {
+        out.tag = raw.tag;
+      }
+      if (typeof raw.index === 'number' && Number.isFinite(raw.index)) {
+        out.index = Math.max(-1, Math.min(10000, Math.floor(raw.index)));
+      }
+      if (typeof raw.text === 'string' && raw.text.length > 0) {
+        out.text = raw.text.slice(0, 64);
+      }
+      if (typeof raw.ariaLabel === 'string' && raw.ariaLabel.length > 0) {
+        out.ariaLabel = raw.ariaLabel.slice(0, 128);
+      }
+      return out;
+    }
     case 'keydown':
     case 'keyup':
       return {
@@ -286,6 +327,64 @@ function sanitizeControlMessage(msg) {
       return { type: 'nav', path: msg.path.slice(0, 1024), replace: Boolean(msg.replace) };
     case 'title':
       return { type: 'title', title: String(msg.title || '').slice(0, 200) };
+    case 'scroll':
+      return {
+        type: 'scroll',
+        scrollX: Math.max(0, Math.min(200000, Math.round(Number(msg.scrollX) || 0))),
+        scrollY: Math.max(0, Math.min(200000, Math.round(Number(msg.scrollY) || 0))),
+        scrollWidth: Math.max(1, Math.min(200000, Math.round(Number(msg.scrollWidth) || 1))),
+        scrollHeight: Math.max(1, Math.min(200000, Math.round(Number(msg.scrollHeight) || 1))),
+        clientWidth: Math.max(1, Math.min(10000, Math.round(Number(msg.clientWidth) || 1))),
+        clientHeight: Math.max(1, Math.min(10000, Math.round(Number(msg.clientHeight) || 1))),
+      };
+    case 'console': {
+      const level = ['log', 'info', 'warn', 'error', 'debug'].includes(msg.level) ? msg.level : 'log';
+      const rawArgs = Array.isArray(msg.args) ? msg.args.slice(0, 12) : [];
+      return {
+        type: 'console',
+        level,
+        args: rawArgs.map((a) => String(a ?? '').slice(0, 1000)),
+      };
+    }
+    case 'dom-sync':
+      return {
+        type: 'dom-sync',
+        path: typeof msg.path === 'string' && msg.path.startsWith('/') && !msg.path.startsWith('//')
+          ? msg.path.slice(0, 1024)
+          : '/',
+        title: typeof msg.title === 'string' ? msg.title.slice(0, 200) : '',
+        html: typeof msg.html === 'string' ? msg.html.slice(0, 2 * 1024 * 1024) : '',
+      };
+    case 'dom-patch': {
+      const rawChunks = Array.isArray(msg.chunks) ? msg.chunks.slice(0, 16) : [];
+      const chunks = [];
+      for (let i = 0; i < rawChunks.length; i++) {
+        const c = rawChunks[i];
+        if (!c || typeof c.vid !== 'string' || typeof c.html !== 'string') continue;
+        const safeAttrs = {};
+        if (c.attrs && typeof c.attrs === 'object' && !Array.isArray(c.attrs)) {
+          for (const [k, v] of Object.entries(c.attrs)) {
+            if (typeof k === 'string' && k.length <= 64 && typeof v === 'string' && v.length <= 4096) {
+              safeAttrs[k] = v;
+            }
+          }
+        }
+        chunks.push({
+          vid: c.vid.slice(0, 64),
+          attrs: safeAttrs,
+          html: c.html.slice(0, 512 * 1024),
+        });
+      }
+      if (!chunks.length) return null;
+      return {
+        type: 'dom-patch',
+        path: typeof msg.path === 'string' && msg.path.startsWith('/') && !msg.path.startsWith('//')
+          ? msg.path.slice(0, 1024)
+          : '/',
+        title: typeof msg.title === 'string' ? msg.title.slice(0, 200) : '',
+        chunks,
+      };
+    }
     case 'input-focus':
       return {
         type: 'input-focus',

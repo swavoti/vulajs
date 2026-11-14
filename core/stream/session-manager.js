@@ -5,10 +5,13 @@ const { URL } = require('node:url');
 const { SurfaceBuffer, createFrameEncoder } = require('./encoder.js');
 const {
   clampViewport,
+  encodeFramePacket,
   sanitizeControlMessage,
   validateInputEvent,
   validateSurfaceName,
 } = require('./protocol.js');
+const { resolveStreamingConfig } = require('../config.js');
+const { verifyOrigin } = require('../RSC/csrf.js');
 const { createWebRtcPeerSession } = require('./webrtc-peer.js');
 const { acceptWebSocketUpgrade } = require('./ws-transport.js');
 
@@ -26,20 +29,45 @@ function sanitizeParams(value, depth = 0) {
   return clean;
 }
 
-function createStreamManager({ manifest, config, getAuthHook, secret }) {
-  const signingSecret = secret || crypto.randomBytes(32);
+function createStreamManager({ manifest, manifestPath, config, wasmRuntime, cwd, serverRef, getAuthHook, secret }) {
+  const { createGlobalPageSurface } = require('./global-page-surface.js');
+  const { shutdownSharedBrowser } = require('./cdp-renderer.js');
+  const streamCfg = resolveStreamingConfig(config);
   const expConfig = (config && config.experimental) || {};
+  const isGlobalStreamEnabled = Boolean(streamCfg.global);
+  const signingSecret = secret || crypto.randomBytes(32);
 
-  const maxWidth = Math.max(64, Number(expConfig['webrtc-stream-max-width']) || 1920);
-  const maxHeight = Math.max(64, Number(expConfig['webrtc-stream-max-height']) || 1080);
-  const fps = Math.max(1, Math.min(120, Number(expConfig['webrtc-stream-fps']) || 30));
-  const preferredCodec = String(expConfig['webrtc-stream-codec'] || 'vp8');
-  const idleTimeoutMs = Math.max(1000, Number(expConfig['webrtc-stream-idle-timeout-ms']) || 60000);
-  const maxSessions = Math.max(1, Number(expConfig['webrtc-stream-max-sessions']) || 64);
+  const maxWidth = Math.max(64, Number(streamCfg['max-width']) || 1920);
+  const maxHeight = Math.max(64, Number(streamCfg['max-height']) || 1080);
+  const fps = Math.max(1, Math.min(120, Number(streamCfg.fps) || 30));
+  const preferredCodec = String(streamCfg.codec || 'vp8');
+  const idleTimeoutMs = Math.max(1000, Number(streamCfg['idle-timeout-ms']) || 60000);
+  const maxSessions = Math.max(1, Number(streamCfg['max-sessions']) || 64);
   const iceServers = Array.isArray(expConfig['webrtc-ice-servers']) ? expConfig['webrtc-ice-servers'] : [];
 
   const activeSessions = new Map();
   const pendingPeers = new Map();
+  const consumedTickets = new Map();
+
+  function pruneConsumedTickets(now = Date.now()) {
+    for (const [id, exp] of consumedTickets.entries()) {
+      if (exp <= now) consumedTickets.delete(id);
+    }
+  }
+
+  function isTicketReusableOrActive(ticketData) {
+    pruneConsumedTickets();
+    return activeSessions.has(ticketData.sessionId) || consumedTickets.has(ticketData.sessionId);
+  }
+
+  function consumeTicketOnce(ticketData) {
+    pruneConsumedTickets();
+    if (activeSessions.has(ticketData.sessionId) || consumedTickets.has(ticketData.sessionId)) {
+      return false;
+    }
+    consumedTickets.set(ticketData.sessionId, Number(ticketData.exp) || (Date.now() + 60_000));
+    return true;
+  }
 
   function signPayload(payloadObj) {
     const body = Buffer.from(JSON.stringify(payloadObj), 'utf8').toString('base64url');
@@ -103,6 +131,9 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
   }
 
   async function mintTicketHandler(req, res) {
+    if (serverRef && !serverRef.port && req.socket?.localPort) {
+      serverRef.port = req.socket.localPort;
+    }
     const contentType = typeof req.is === 'function'
       ? req.is('application/json')
       : String(req.headers?.['content-type'] || '').toLowerCase().includes('application/json');
@@ -118,22 +149,25 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
       return res.status(400).json({ error: 'Invalid stream surface name' });
     }
 
-    const entry = findSurfaceEntry(surface);
-    if (!entry) {
-      return res.status(404).json({ error: 'Stream surface not found' });
-    }
+    const isGlobalSurface = isGlobalStreamEnabled && surface === '__global__';
+    if (!isGlobalSurface) {
+      const entry = findSurfaceEntry(surface);
+      if (!entry) {
+        return res.status(404).json({ error: 'Stream surface not found' });
+      }
 
-    let handler;
-    try {
-      handler = require(entry.path);
-    } catch (err) {
-      console.error('[vula-stream] Failed to load surface:', err);
-      return res.status(500).json({ error: 'Failed to load stream surface' });
-    }
+      let handler;
+      try {
+        handler = require(entry.path);
+      } catch (err) {
+        console.error('[vula-stream] Failed to load surface:', err);
+        return res.status(500).json({ error: 'Failed to load stream surface' });
+      }
 
-    const auth = await authorizeSurface(req, handler);
-    if (!auth.ok) {
-      return res.status(auth.status).json({ error: auth.error });
+      const auth = await authorizeSurface(req, handler);
+      if (!auth.ok) {
+        return res.status(auth.status).json({ error: auth.error });
+      }
     }
 
     if (activeSessions.size >= maxSessions) {
@@ -176,7 +210,7 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
   }
 
   async function attachTransport(ticketData, transport) {
-    if (activeSessions.has(ticketData.sessionId)) {
+    if (!consumeTicketOnce(ticketData)) {
       transport.close(1008);
       return null;
     }
@@ -186,28 +220,41 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
       return null;
     }
 
-    const entry = findSurfaceEntry(ticketData.surface);
-    if (!entry) {
-      transport.sendText(JSON.stringify({ type: 'error', message: 'Surface not found' }));
-      transport.close(1008);
-      return null;
-    }
+    const isGlobalSurface = isGlobalStreamEnabled && ticketData.surface === '__global__';
+    let fn;
+    if (isGlobalSurface) {
+      fn = (streamCtx) => createGlobalPageSurface(streamCtx, {
+        manifest,
+        manifestPath,
+        config,
+        wasmRuntime,
+        cwd,
+        serverRef,
+      });
+    } else {
+      const entry = findSurfaceEntry(ticketData.surface);
+      if (!entry) {
+        transport.sendText(JSON.stringify({ type: 'error', message: 'Surface not found' }));
+        transport.close(1008);
+        return null;
+      }
 
-    let mod;
-    try {
-      mod = require(entry.path);
-    } catch (err) {
-      console.error('[vula-stream] Surface load error:', err);
-      transport.sendText(JSON.stringify({ type: 'error', message: 'Surface initialization failed' }));
-      transport.close(1011);
-      return null;
-    }
+      let mod;
+      try {
+        mod = require(entry.path);
+      } catch (err) {
+        console.error('[vula-stream] Surface load error:', err);
+        transport.sendText(JSON.stringify({ type: 'error', message: 'Surface initialization failed' }));
+        transport.close(1011);
+        return null;
+      }
 
-    const fn = mod.default || mod;
-    if (typeof fn !== 'function') {
-      transport.sendText(JSON.stringify({ type: 'error', message: 'Invalid stream surface export' }));
-      transport.close(1011);
-      return null;
+      fn = mod.default || mod;
+      if (typeof fn !== 'function') {
+        transport.sendText(JSON.stringify({ type: 'error', message: 'Invalid stream surface export' }));
+        transport.close(1011);
+        return null;
+      }
     }
 
     let width = ticketData.width;
@@ -246,6 +293,21 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
       }
     }
 
+    let customFrameSeq = 1;
+    function pushFrame(payload, frameOpts = {}) {
+      if (closed || !transport.isOpen || !payload) return;
+      const packet = encodeFramePacket({
+        codec: frameOpts.codec || 'jpeg',
+        keyframe: frameOpts.keyframe !== false,
+        width: Math.max(64, Number(frameOpts.width) || width),
+        height: Math.max(64, Number(frameOpts.height) || height),
+        seq: customFrameSeq++,
+        timestampUs: Math.round(performance.now() * 1000),
+        payload,
+      });
+      transport.sendBinary(packet);
+    }
+
     let lastRenderAt = 0;
     function renderAndEncodeFrame() {
       renderTimer = null;
@@ -255,11 +317,15 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
       const key = forceKeyframe;
       forceKeyframe = false;
       try {
-        const customRgba = surfaceInstance.render(surfaceBuffer, ctx);
-        const buf = Buffer.isBuffer(customRgba) || customRgba instanceof Uint8Array
-          ? customRgba
-          : surfaceBuffer.data;
-        encoder.encode(buf, { keyframe: key });
+        if (surfaceInstance.streamsOwnFrames) {
+          surfaceInstance.render(surfaceBuffer, ctx);
+        } else {
+          const customRgba = surfaceInstance.render(surfaceBuffer, ctx);
+          const buf = Buffer.isBuffer(customRgba) || customRgba instanceof Uint8Array
+            ? customRgba
+            : surfaceBuffer.data;
+          encoder.encode(buf, { keyframe: key });
+        }
       } catch (err) {
         console.error('[vula-stream] Render error:', err);
         pushControl({ type: 'error', message: 'Surface render failed' });
@@ -287,6 +353,7 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
       userId: ticketData.userId || null,
       requestRender,
       pushControl,
+      pushFrame,
     };
 
     let surfaceInstance = null;
@@ -337,14 +404,27 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
     activeSessions.set(ticketData.sessionId, {
       sessionId: ticketData.sessionId,
       surface: ticketData.surface,
+      reload() {
+        if (closed) return;
+        if (surfaceInstance && typeof surfaceInstance.reload === 'function') {
+          surfaceInstance.reload();
+        } else {
+          forceKeyframe = true;
+          requestRender();
+        }
+      },
       destroy,
     });
     resetIdleTimer();
 
+    const streamQuality = String(expConfig['stream-quality'] || expConfig['webrtc-stream-quality'] || 'hd').toLowerCase();
+    const activeCodec = surfaceInstance.streamsOwnFrames
+      ? (streamQuality === 'lossless' || streamQuality === 'png' ? 'png' : 'jpeg')
+      : encoder.codec;
     pushControl({
       type: 'ready',
       transport: transport.transportName,
-      codec: encoder.codec,
+      codec: activeCodec,
       width,
       height,
     });
@@ -394,7 +474,9 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
           console.error('[vula-stream] onInput error:', err);
         }
       }
-      requestRender();
+      if (!surfaceInstance || !surfaceInstance.streamsOwnFrames || event.type === 'resize') {
+        requestRender();
+      }
     });
 
     transport.on('close', destroy);
@@ -414,6 +496,9 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
     const ticketData = verifyTicket(ticket);
     if (!ticketData) {
       return res.status(401).json({ error: 'Invalid or expired stream ticket' });
+    }
+    if (!candidate && (isTicketReusableOrActive(ticketData) || pendingPeers.has(ticketData.sessionId))) {
+      return res.status(401).json({ error: 'Stream ticket has already been used' });
     }
 
     if (candidate && pendingPeers.has(ticketData.sessionId)) {
@@ -455,6 +540,13 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
   }
 
   function handleWsUpgrade(req, socket) {
+    const allowedOrigins = (config && config.security && config.security['allowed-origins']) || [];
+    if (!verifyOrigin(req, allowedOrigins)) {
+      socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     let ticketToken = null;
     try {
       const url = new URL(req.url, 'http://vula.local');
@@ -465,7 +557,7 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
     }
 
     const ticketData = verifyTicket(ticketToken);
-    if (!ticketData) {
+    if (!ticketData || isTicketReusableOrActive(ticketData)) {
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
@@ -480,6 +572,15 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
     for (const session of Array.from(activeSessions.values())) {
       session.destroy();
     }
+    shutdownSharedBrowser().catch(() => {});
+  }
+
+  function reloadActiveSessions() {
+    for (const session of Array.from(activeSessions.values())) {
+      if (session && typeof session.reload === 'function') {
+        session.reload();
+      }
+    }
   }
 
   return {
@@ -487,6 +588,7 @@ function createStreamManager({ manifest, config, getAuthHook, secret }) {
     signalHandler,
     handleWsUpgrade,
     verifyTicket,
+    reloadActiveSessions,
     destroyAll,
     getActiveCount: () => activeSessions.size,
   };

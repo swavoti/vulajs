@@ -9,6 +9,8 @@ const test = require('node:test');
 const { csrfProtection, verifyOrigin } = require('./RSC/csrf.js');
 const {
   buildCspHeader,
+  buildDevWsScript,
+  createApp,
   createSecurityMiddleware,
   createServerComponentHandler,
   injectHeadTags,
@@ -220,12 +222,14 @@ test('serveSwvulaAssets allows only explicit .vula.cache dotfiles and denies arb
     const mw = serveSwvulaAssets(workDir, false, fakeExpress);
 
     let jsOut = '';
+    let jsOpts = null;
     mw(
       { path: '/.vula.cache.js' },
-      { sendFile(p) { jsOut = p; } },
+      { sendFile(p, opts) { jsOut = p; jsOpts = opts; } },
       () => {}
     );
     assert.equal(jsOut, path.join(workDir, '.vula.cache.js'));
+    assert.deepEqual(jsOpts, { dotfiles: 'allow' });
 
     let envStatus = 0;
     mw(
@@ -237,6 +241,29 @@ test('serveSwvulaAssets allows only explicit .vula.cache dotfiles and denies arb
   } finally {
     rmSync(workDir, { recursive: true, force: true });
   }
+});
+
+test('serveSwvulaAssets serves .vula.cache dotfiles over real Express HTTP', async (t) => {
+  const express = require('express');
+  const workDir = mkdtempSync(path.join(tmpdir(), 'vula-swvula-http-'));
+  t.after(() => rmSync(workDir, { recursive: true, force: true }));
+
+  writeFileSync(path.join(workDir, '.vula.cache.js'), 'console.log("ok");');
+  writeFileSync(path.join(workDir, '.env'), 'SECRET=1');
+
+  const app = express();
+  app.use(serveSwvulaAssets(workDir, false, express));
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+
+  const { port } = server.address();
+  const okRes = await fetch(`http://127.0.0.1:${port}/.vula.cache.js`);
+  assert.equal(okRes.status, 200);
+  assert.equal(await okRes.text(), 'console.log("ok");');
+
+  const envRes = await fetch(`http://127.0.0.1:${port}/.env`);
+  assert.equal(envRes.status, 404);
 });
 
 test('HTTP security middleware, CSRF, Server Component RPC auth, and SSR stream ordering over real sockets', async (t) => {
@@ -426,4 +453,79 @@ test('HTTP security middleware, CSRF, Server Component RPC auth, and SSR stream 
   });
   assert.equal(pubRes.status, 200);
   assert.deepEqual(await pubRes.json(), { result: { hasProtoProp: false, v: 7 } });
+});
+
+test('createApp fails closed on devMode when NODE_ENV is unset, enforces middleware on /_vula/route, and renders white dev error overlay', async (t) => {
+  const workDir = mkdtempSync(path.join(tmpdir(), 'vula-route-mw-'));
+  const prevNodeEnv = process.env.NODE_ENV;
+  delete process.env.NODE_ENV;
+  t.after(() => {
+    if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = prevNodeEnv;
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const appDir = path.join(workDir, 'app');
+  mkdirSync(path.join(appDir, 'admin'), { recursive: true });
+  mkdirSync(path.join(workDir, '.swvula'), { recursive: true });
+  const reactPath = require.resolve('react');
+  const adminPagePath = path.join(appDir, 'admin', 'page.js');
+  writeFileSync(adminPagePath, `
+    const React = require(${JSON.stringify(reactPath)});
+    module.exports = function AdminPage() { return React.createElement('div', null, 'TOP_SECRET_ADMIN'); };
+  `);
+
+  const mwPath = path.join(workDir, 'middleware.js');
+  writeFileSync(mwPath, `
+    module.exports = function(req, res, next) {
+      if (req.path.startsWith('/admin') && req.headers['x-auth'] !== 'ok') {
+        return res.status(401).send('Unauthorized admin access');
+      }
+      next();
+    };
+  `);
+
+  writeFileSync(path.join(workDir, 'vulaism.config.yaml'), 'streaming:\n  enabled: false\n  global: false\n');
+  const manifest = {
+    routes: [{ path: '/admin', clientPath: 'app/admin/page.js', componentPath: adminPagePath }],
+    apiRoutes: [],
+    serverComponents: [],
+    streamSurfaces: [],
+    middleware: mwPath,
+  };
+  writeFileSync(path.join(workDir, '.vula-routes.json'), JSON.stringify(manifest));
+
+  const wasmRuntime = {
+    match(pathname) { return pathname === '/admin' ? 0 : -1; },
+    compress(buf) { return buf; },
+  };
+
+  const { app, isDev } = await createApp({ cwd: workDir, manifest, wasmRuntime });
+  assert.equal(isDev, false);
+
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const port = server.address().port;
+
+  // Middleware must block /_vula/route?path=/admin without x-auth
+  const blocked = await fetch(`http://127.0.0.1:${port}/_vula/route?path=%2Fadmin`);
+  assert.equal(blocked.status, 401);
+  assert.ok(!(await blocked.text()).includes('TOP_SECRET_ADMIN'));
+
+  // Authorized request succeeds
+  const allowed = await fetch(`http://127.0.0.1:${port}/_vula/route?path=%2Fadmin`, {
+    headers: { 'x-auth': 'ok' },
+  });
+  assert.equal(allowed.status, 200);
+  assert.ok((await allowed.text()).includes('TOP_SECRET_ADMIN'));
+
+  // Dev overlay script uses pure white surface, inline swavoti/vula, v-prefix, error count chip, and seeded build errors
+  const overlayScript = buildDevWsScript('test-nonce', '2.0.6', [
+    { title: 'Build Error', file: 'app/page.tsx:12:4', message: 'SyntaxError: Unexpected token', source: 'build' },
+  ]);
+  assert.ok(overlayScript.includes('#ffffff'));
+  assert.ok(overlayScript.includes('swavoti/vula'));
+  assert.ok(overlayScript.includes('SyntaxError: Unexpected token'));
+  assert.ok(overlayScript.includes('app/page.tsx:12:4'));
 });

@@ -83,7 +83,7 @@ function generateRouteManifest(appDir) {
         const relativeTail = relative(apiDir, dir).replace(/\\/g, "/");
         const routeName = file.replace(/\.(ts|js)$/, "");
         let apiPath;
-        if (relativeTail === ".") {
+        if (!relativeTail || relativeTail === ".") {
           apiPath = `/api/${routeName}`;
         } else {
           apiPath = `/api/${relativeTail}/${routeName}`;

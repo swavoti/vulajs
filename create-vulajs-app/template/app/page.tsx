@@ -26,6 +26,7 @@ export default function Home() {
       
       {/* Call to Actions */}
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+        <a href="https://github.com/nguyenblacks/vulajs" target="_blank" rel="noreferrer" style={{ padding: '1rem 2rem', backgroundColor: '#3b82f6', borderRadius: '9999px', textDecoration: 'none', color: '#ffffff', fontWeight: '600', fontSize: '1.125rem', transition: 'background-color 0.2s', boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.4)' }}>
         <a href="https://github.com/swavoti/vulajs" target="_blank" rel="noreferrer" style={{ padding: '1rem 2rem', backgroundColor: '#3b82f6', borderRadius: '9999px', textDecoration: 'none', color: '#ffffff', fontWeight: '600', fontSize: '1.125rem', transition: 'background-color 0.2s', boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.4)' }}>
           View Docs on GitHub
         </a>
