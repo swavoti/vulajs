@@ -1,12 +1,11 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nguyenblacks/vulajs/refs/heads/main/assets/vula.jpeg" alt="Vula.js" width="120" />
   <img src="https://raw.githubusercontent.com/swavoti/vulajs/refs/heads/main/assets/vula.jpeg" alt="Vula.js" width="120" />
 </p>
 
 <h1 align="center">Vula.js</h1>
 
 <p align="center">
-  A React framework built on Rspack. File-based routing, API routes, server components, and caching — all in one codebase.
+  A WebSocket server-streamed full-stack framework built on Rspack. Zero client-side app bundles by default, with live DOM &amp; Canvas streaming, file-based routing, API routes, and server components — all in one codebase.
 </p>
 
 <p align="center">
@@ -20,35 +19,35 @@
 
 ## What is Vula.js?
 
-Vula.js is a React framework for building full-stack web applications. You write your pages and your API routes in the same project, and Vula handles the rest — routing, bundling, server-side execution, caching, and security.
+Vula.js is a server-first full-stack web framework built around its own **WebSocket Server Streaming Engine** (`core/stream/` + `/_vula/stream/client.js`). Instead of shipping your application logic, routes, and JS chunks to the browser, Vula executes your UI and business logic on the server and streams live DOM updates (`dom-sync` / `dom-patch`) or binary frame surfaces over WebSockets (`/_vula/stream/ws`).
 
-Your frontend code runs in the browser. Your backend code (API routes, server components) runs on the server. Vula bridges the two so you can build everything in one place without worrying about the plumbing.
+Your pages (`app/`), API routes (`app/api/`), server components (`*.sever.comp.ts`), and interactive stream surfaces (`*.stream.ts`) live in one codebase. Vula compiles them with **Rspack** (a Rust-based bundler) and SWC, routes them with a compact C/WASM trie, and bridges UI events and state back over authenticated single-use WebSocket sessions.
 
-It runs on both **Deno** and **Node.js**, and uses **Rspack** (a Rust-based bundler) instead of Webpack for fast builds and instant hot module replacement.
+It runs on both **Deno** and **Node.js**, and lets you switch cleanly between **Global WebSocket DOM Streaming** (default) and standard client-chunk hydration via `vulaism.config.yaml`.
 
 ---
 
 ## Benefits
 
+- **WebSocket Server Streaming (Default)** — With `streaming.enabled: true` and `streaming.global: true`, Vula strips client app bundles (`.vula.cache.js` and `/chunks/`) and streams live DOM state and patches over `/_vula/stream/ws` via `VulaStream.mountDom`, keeping UI logic, state, and proprietary code on the server.
+- **Named Stream Surfaces (`*.stream.ts`)** — Mount server-rendered interactive canvas surfaces on demand with `<VulaStreamSurface />` from `@swavoti/vula/client`, streaming `"VF"` binary frame packets (`jpeg`, `png`, `rgba-deflate`, or WebCodecs `vp8`/`vp9`/`h264`/`av1`).
 - **File-based routing** — Drop a `page.tsx` in `app/` and it becomes a route. No config files, no router setup.
-- **API routes in the same codebase** — Write backend handlers in `app/api/`. They run on the server, but live right next to your frontend code.
-- **Server components** — Run logic on the server and get results on the client with `Vula.server()`. No REST boilerplate needed.
+- **API routes in the same codebase** — Write backend handlers in `app/api/`. They run on the server, right next to your UI code.
+- **Server components** — Run logic on the server and get results back via `Vula.server()` (`*.sever.comp.ts`) without REST boilerplate.
 - **Built-in caching** — Add `<VulaCache />` to your app and get service worker caching out of the box.
-- **Security scanning** — Vula scans your code for unauthorized `<script>` tags before every build. If it's not in `vula.scripts.allow.ts`, the build fails.
-- **Rspack bundling** — Rust-powered builds. Dev server starts fast, HMR is instant.
+- **Security scanning** — Vula scans your code for unauthorized `<script>` tags before every build. If a script source isn't in `vula.scripts.allow.ts`, the build stops.
+- **Rspack bundling** — Rust-powered builds and fast hot module replacement during development.
 - **Deno and Node support** — Set `"runtime": "deno"` or `"runtime": "node"` in your `package.json` and Vula adapts.
 - **SEO injection** — Viewport, OpenGraph, and meta tags are injected automatically into every HTML response.
 - **Middleware** — Add a `middleware.ts` in your `app/` folder and it runs before every request.
-- **React Compiler** — Pre-configured with `babel-plugin-react-compiler` for automatic memoization and performance out-of-the-box.
-- **Automatic Code Splitting** — Smart bundle splitting for dependencies and application code.
-- **Vula navigation** — Use `<VulaLink page="/about">` for same-app navigation. Vula requests the destination page from the server and loads that page's client chunk on demand while keeping the layout mounted.
-- **WASM routing core** — A compact C trie matches static, dynamic, and catch-all page routes on the server and during client navigation. A C/WASM codec losslessly compresses route fragments when beneficial.
+- **Vula navigation** — `<VulaLink page="/about">` intercepts internal navigation over the active WebSocket DOM session (in Global Streaming mode) or fetches compressed route fragments on demand (when `streaming.global: false`).
+- **WASM routing core** — A compact C trie (`core/wasm/vula-core.wasm`) matches static, dynamic, and catch-all page routes, paired with a C/WASM LZSS codec for route fragments.
 
 ---
 
 ## Built-in Modules
 
-Vula comes with powerful, zero-config optional modules you can import to instantly supercharge your application.
+Vula comes with powerful, zero-config built-in modules you can use to power your application:
 
 ### 1. Video Optimization (`@vula/video-opti`)
 A built-in middleware that utilizes FFmpeg WASM to automatically intercept video requests (`.mp4`, etc.) and seamlessly transcode them into highly optimized HLS chunks (`.m3u8` / `.ts`) on the fly, caching them for future requests.
@@ -56,8 +55,8 @@ A built-in middleware that utilizes FFmpeg WASM to automatically intercept video
 ### 2. Image Optimization (`@vula/image-opti`)
 This middleware intercepts image requests and optimizes them dynamically. Simply pass query parameters to resize and reformat images instantly: `<img src="/images/hero.png?w=800&format=webp" />`.
 
-### 3. Streaming React SSR (Built-in)
-Vula renders and streams React pages natively via `react-dom/server` (`renderToPipeableStream`) in `core/server.js`, with nonce-based CSP and automatic `<head>` metadata injection.
+### 3. WebSocket Server Streaming (`core/stream/`)
+Vula replaces traditional client-heavy delivery with a custom WebSocket streaming runtime (`/_vula/stream/client.js`, `VulaStream.mountDom`, `VulaStream.mount`). In Global DOM Streaming mode (`streaming.global: true`), `core/server.js` strips `.vula.cache.js` and `/chunks/` scripts from the HTML shell, connects the page to an authenticated WebSocket (`/_vula/stream/ws`), streams `dom-sync` and incremental `dom-patch` updates keyed by `data-vid`, and forwards user events (`click`, `input`, `change`, `submit`, `popstate`) back to the server.
 
 ### 4. Font Optimization
 Vula includes built-in font optimization out of the box, controlled via your `vulaism.config.yaml`.
@@ -96,28 +95,33 @@ my-app/
 │   ├── about/
 │   │   └── page.tsx               # About page (/about)
 │   ├── layout.tsx                 # Shared layout
+│   ├── studio.stream.ts           # Named server-only Canvas stream surface
 │   ├── api/
 │   │   ├── hello.ts               # API route (GET /api/hello)
 │   │   └── counter.sever.comp.ts  # Server component
 │   └── middleware.ts              # Runs before every request
 ├── src/
-│   ├── index.tsx                  # Client entry point
+│   ├── index.tsx                  # Client bootstrap (bootstrapVula from @swavoti/vula/client)
 │   ├── globals.css                # Global styles
 │   ├── cache.tsx                  # VulaCache component
-│   ├── router.tsx                 # VulaLink and streamed page navigation
-│   ├── stream.tsx                 # VulaStreamSurface (experimental frame stream)
-│   └── vula.ts                    # Client bridge (Vula.server, Vula.api, VulaLink, VulaStreamSurface)
+│   └── vula.ts                    # Re-exports @swavoti/vula/client
 ├── public/
 │   └── vula-sw.js                 # Service worker for caching
 ├── core/
-│   ├── server.js                  # Express server (API + SSR)
-│   ├── stream/                    # Experimental WebRTC / WebCodecs frame stream engine
+│   ├── server.js                  # Express server + SSR shell + WS upgrade wiring
+│   ├── config.js                  # vulaism.config.yaml loader & streaming resolver
+│   ├── client/                    # @swavoti/vula/client SDK (VulaLink, VulaStreamSurface, bootstrapVula)
+│   ├── stream/                    # WebSocket Global DOM & Canvas frame stream engine
+│   ├── wasm/                      # C/WASM routing trie & LZSS codec
 │   └── router/
-│       └── manifest.js            # Route manifest generator
+│       └── manifest.js            # Route & streamSurface manifest generator
 ├── bin/
-│   └── vula.js                    # CLI (vula dev, vula build)
+│   └── vula.js                    # CLI (vula dev, vula build, vula start, vula upgrade-check)
+├── vulaism.config.yaml            # Master app, security, optimization, and streaming config
 ├── vula.scripts.allow.ts          # Security allow list
 ├── rspack.config.js               # Rspack bundler config
+├── deploy.md                      # Production deployment modes guide
+├── troubleshooting.md             # Common runtime & streaming diagnostics
 ├── tsconfig.json                  # TypeScript config
 ├── deno.json                      # Deno config
 └── package.json
@@ -219,10 +223,10 @@ API route handlers receive standard Express `req` and `res` objects. They run on
 
 ### Calling API Routes from the Frontend
 
-Use the `Vula.api()` helper:
+Use the `Vula.api()` helper (exported from `@swavoti/vula/client` and re-exported by `src/vula.ts`):
 
 ```tsx
-import { Vula } from '../src/vula';
+import { Vula } from '@swavoti/vula/client';
 
 // Short form — automatically prefixes with /api/
 const data = await Vula.api('hello');
@@ -270,7 +274,7 @@ export default async function counter(currentValue: number) {
 Use `Vula.server()`:
 
 ```tsx
-import { Vula } from '../src/vula';
+import { Vula } from '@swavoti/vula/client';
 
 const newCount = await Vula.server('api/counter', 5);
 // Returns: 6
@@ -280,26 +284,44 @@ The client bridge sends the arguments to the server via `POST /_vula/server-comp
 
 ---
 
-## Experimental: WebRTC / WebCodecs Frame Streaming
+## WebSocket Server Streaming (Global DOM & Canvas Surfaces)
 
-Vula includes an **opt-in experimental framework module** for streaming interactive UI surfaces as live frames from the server — keeping surface logic, state, and proprietary code off the client.
+Vula streams interactive applications and isolated UI surfaces from the server over **WebSockets (`/_vula/stream/ws`)** — keeping page bundles, application state, and proprietary business logic off the client.
 
-### 1. Enable in `vulaism.config.yaml`
+> **WebRTC Removed:** Vula no longer uses WebRTC peer connections as its streaming mechanism. All streaming (`__global__` DOM streaming and `*.stream.*` canvas surfaces) runs over authenticated WebSocket sessions (`/_vula/stream/ws`) via `/_vula/stream/client.js`. Legacy `experimental.webrtc-stream*` config keys are mapped automatically to `streaming.*` in `core/config.js`.
+
+### 1. Configure `vulaism.config.yaml`
+
+Streaming is enabled globally out of the box:
 
 ```yaml
-experimental:
-  webrtc-stream: true
-  webrtc-stream-codec: "vp8"          # "vp8" | "vp9" | "h264" | "av1"
-  webrtc-stream-fps: 30
-  webrtc-stream-max-width: 1920
-  webrtc-stream-max-height: 1080
-  webrtc-stream-idle-timeout-ms: 60000
-  webrtc-ice-servers: []
+streaming:
+  enabled: true              # Enable WebSocket server streaming (or "--global")
+  global: true               # Stream all pages as __global__ DOM sessions with zero client JS chunks
+  quality: "hd"              # Stream quality preset
+  codec: "vp8"               # "vp8" | "vp9" | "h264" | "av1" (for canvas surface frame encoding)
+  fps: 30
+  max-width: 1920
+  max-height: 1080
+  idle-timeout-ms: 60000
+  allow-console-logs: false  # Forward server surface console output to the browser console
+  dynamic-loading: true      # Defer off-screen / non-critical content loading
 ```
 
-### 2. Create a Server-Only Stream Surface
+You can also force Global DOM Streaming from the CLI or environment with `vula dev --global` or `VULA_STREAM_GLOBAL=1`.
 
-Files matching `*.stream.ts`, `*.stream.js`, `*.stream.comp.ts`, or `*.stream.comp.js` in `app/` are registered into the server manifest (`streamSurfaces`) and **never** added to `.vula-routes.client.json` or the client bundle.
+### 2. How Global DOM Streaming Works (`streaming.global: true`)
+
+When Global DOM Streaming is active, browsers receive zero client application JS chunks:
+
+1. **Lean HTML Shell:** `core/server.js` renders the route on the server with `bootstrapScripts: []`, strips `.vula.cache.js` and `/chunks/` `<script>` tags, marks `#root` with `data-vula-dom="incoming"`, and injects `/_vula/stream/client.js` calling `window.VulaStream.mountDom(document.getElementById('root'), { surface: '__global__', path })`.
+2. **Ticket & WebSocket Handshake:** `VulaStream.mountDom` mints an HMAC-SHA256 signed, single-use ticket via `POST /_vula/stream/ticket` (protected by Vula's CSRF rules) and opens `WebSocket /_vula/stream/ws?ticket=...`.
+3. **Server Session (`createGlobalPageSurface`):** The server runs the `__global__` surface session (using headless Chrome/Chromium/Brave CDP DOM bridging via `createCdpDomSession` when available, or SSR + interactive fallback via `SurfaceBuffer`). Early user clicks/inputs during `data-vula-dom="incoming"` are queued locally until the WebSocket handshake completes.
+4. **Live DOM Morphing & Event Forwarding:** The server pushes `dom-sync` snapshots and incremental `dom-patch` updates keyed by `data-vid`. `mountDom` morphs the live DOM in place (`morphChildren`), synchronizes URL history (`popstate` / `VulaLink`), and sends user interactions (`click`, `input`, `change`, `submit`) back to the server as `dom-event` messages.
+
+### 3. Named Canvas Stream Surfaces (`*.stream.ts`)
+
+For isolated server-only canvas views (or when `streaming.global: false` and `streaming.enabled: true`), files matching `*.stream.ts`, `*.stream.js`, `*.stream.comp.ts`, or `*.stream.comp.js` in `app/` are registered into `streamSurfaces` in `.vula-routes.json` and excluded from `.vula-routes.client.json`:
 
 ```ts
 // app/studio.stream.ts
@@ -324,20 +346,21 @@ export default function createStudioSurface(ctx) {
 }
 ```
 
-### 3. Mount On Demand in React
+Mount a named surface anywhere with `<VulaStreamSurface />`:
 
 ```tsx
-import { VulaStreamSurface } from '../src/vula';
+import { VulaStreamSurface } from '@swavoti/vula/client';
 
 export default function StudioPage() {
   return <VulaStreamSurface surface="studio" style={{ height: '70vh' }} />;
 }
 ```
 
-### How It Works
-- **Security & Auth:** Ticket minting (`POST /_vula/stream/ticket`) enforces CSRF and the same `authorize()` / `isPublic` / `server-component-auth` rules as server components. Tickets are HMAC-SHA256 signed and time-bounded.
-- **Transport & Codecs:** Uses `RTCPeerConnection` + `RTCDataChannel` (`werift`) and `ffmpeg` VP8/VP9/AV1 WebCodecs (`VideoDecoder`) when available, and automatically falls back to `/_vula/stream/ws` + `zlib` `rgba-deflate` frames (`DecompressionStream`) with zero native dependencies.
-- **UX Sync & Idle Pause:** Syncs native OS cursors, `history.pushState`/`popstate`, a positioned `<input>` overlay for typing/mobile keyboards, and pauses rendering when `document.hidden` is true.
+### Under the Hood
+
+- **Security & Auth:** Ticket minting (`POST /_vula/stream/ticket`) enforces CSRF validation, single-use ticket consumption (`consumeTicketOnce`), and the same `authorize(req)` / `isPublic` rules as server components. Tickets are HMAC-SHA256 signed and time-bounded.
+- **Binary Frame Protocol (`"VF"`):** Canvas surfaces stream a 28-byte `"VF"` binary header over `/_vula/stream/ws`, supporting `jpeg`, `png`, zlib `rgba-deflate` (decoded via `DecompressionStream`), and WebCodecs (`vp8`, `vp9`, `h264`, `av1` via `VideoDecoder`).
+- **UX Sync & Idle Pause:** Syncs native OS cursors, scroll position (`scroll` / `scroll-to`), `history.pushState`/`popstate`, a positioned `<input>` overlay for desktop/mobile typing, optional `console` control forwarding, and pauses rendering when `document.hidden` is true. Set `VULA_STREAM_BROWSER` to specify a Chromium/Chrome/Brave binary path for CDP rendering, or `VULA_STREAM_WARMUP=1` to pre-launch it on startup.
 
 ---
 
@@ -437,21 +460,29 @@ For page-specific SEO (title, description, og:image), set them in your `page.tsx
 | Command | Description |
 |---|---|
 | `vula dev` | Start the development server on port 3000 |
-| `vula build` | Build for production using Rspack |
+| `vula dev --global` | Start the dev server with Global WebSocket DOM Streaming forced on |
+| `vula build` | Build production assets and server chunks into `.swvula/` |
+| `vula start` | Start the production server from `.swvula/` |
+| `vula upgrade-check` | Check npm for newer versions of `@swavoti/vula` |
+| `vula help` | Print CLI usage information |
 
 ### `vula dev`
 
 1. Runs security checks (script allow list)
 2. Runs ESLint (if installed)
-3. Generates the route manifest
-4. Starts the Express server with Rspack dev middleware
+3. Generates the route manifests (`.vula-routes.json` and `.vula-routes.client.json`)
+4. Starts the Express server (`core/server.js`) with Rspack dev middleware and WebSocket streaming upgrade handling (`/_vula/stream/ws`)
 
 ### `vula build`
 
 1. Runs security checks
 2. Runs ESLint
-3. Generates the route manifest
-4. Runs `rspack build` to produce a production bundle in `dist/`
+3. Generates the route manifests
+4. Runs `rspack build` to produce production bundles in `.swvula/`
+
+### `vula start`
+
+Starts the production server from the prebuilt `.swvula/` output (see [deploy.md](file:///home/ngudoliswoga/vulajs/deploy.md)).
 
 ---
 
@@ -518,14 +549,17 @@ server:
   port: 3000
   trust-proxy: false       # Set true if deployed behind Nginx/Cloudflare
 
-experimental:
-  webrtc-stream: false     # Enable on-demand WebRTC / WebCodecs frame streaming
-  webrtc-stream-codec: "vp8"
-  webrtc-stream-fps: 30
-  webrtc-stream-max-width: 1920
-  webrtc-stream-max-height: 1080
-  webrtc-stream-idle-timeout-ms: 60000
-  webrtc-ice-servers: []
+streaming:
+  enabled: true            # Enable WebSocket server streaming (or "--global")
+  global: true             # Stream all pages as __global__ DOM sessions (no client JS chunks)
+  quality: "hd"            # Surface encoding preset
+  codec: "vp8"             # "vp8" | "vp9" | "h264" | "av1"
+  fps: 30
+  max-width: 1920
+  max-height: 1080
+  idle-timeout-ms: 60000
+  allow-console-logs: false
+  dynamic-loading: true
 ```
 
 ---
@@ -733,17 +767,23 @@ export class ErrorBoundary extends React.Component<
 vula build
 ```
 
-This produces a `dist/` directory with your bundled frontend.
+This produces a `.swvula/` directory containing your built production server chunks and static assets.
 
 ### Run in Production
 
-Set `NODE_ENV=production` and start the server:
+Start the production server with:
 
 ```bash
-NODE_ENV=production node bin/vula.js dev
+npx vula start
 ```
 
-In production mode, the server serves static files from `dist/` instead of running Rspack dev middleware.
+Or directly via Node:
+
+```bash
+NODE_ENV=production node bin/vula.js start
+```
+
+In production mode (`vula start`), the server serves from `.swvula/` without running Rspack dev middleware. See [deploy.md](file:///home/ngudoliswoga/vulajs/deploy.md) for details on deploying in **Global WebSocket DOM Streaming mode** (`streaming.enabled: true`, `streaming.global: true`) vs **Standard SSR + Client Chunk mode**, and [troubleshooting.md](file:///home/ngudoliswoga/vulajs/troubleshooting.md) for diagnostics.
 
 ### Docker
 
@@ -757,7 +797,7 @@ RUN npx vula build
 
 ENV NODE_ENV=production
 EXPOSE 3000
-CMD ["node", "bin/vula.js", "dev"]
+CMD ["npx", "vula", "start"]
 ```
 
 ### Platform Support
@@ -773,29 +813,47 @@ Vula runs anywhere Node.js or Deno runs:
 
 ## How the Bridge Works (Architecture)
 
-Understanding how Vula connects the frontend and backend:
+Understanding how Vula connects the browser and server across its two operating modes:
+
+### 1. Global WebSocket Streaming Mode (`streaming.enabled: true`, `streaming.global: true` — Default)
+
+```
+Browser (Thin Client Shell)              Server (Node/Deno + core/stream/)
+───────────────────────────              ─────────────────────────────────
+GET /                              ───►  core/server.js SSR HTML shell
+                                         (bootstrapScripts: [], strips .vula.cache.js & /chunks/)
+/_vula/stream/client.js
+  POST /_vula/stream/ticket        ───►  CSRF + auth check → HMAC-SHA256 ticket
+  WS /_vula/stream/ws?ticket=...   ◄──►  createGlobalPageSurface (__global__)
+    ◄── dom-sync / dom-patch (data-vid)    ├── createCdpDomSession (CDP DOM bridge)
+    ──► dom-event / popstate               └── SurfaceBuffer SSR fallback
+    ◄── control (nav / scroll / cursor)
+```
+
+In this default mode, **zero application JS chunks (`.vula.cache.js`, `/chunks/*`) are sent to the browser**. `/_vula/stream/client.js` calls `VulaStream.mountDom` on `#root`, queues any interactions while `data-vula-dom="incoming"`, morphs incoming `dom-sync`/`dom-patch` payloads directly into the DOM, and forwards DOM events back over the WebSocket.
+
+Named canvas surfaces (`*.stream.ts`) can also be embedded via `[data-vula-stream]` / `<VulaStreamSurface />`, streaming `"VF"` binary frame packets (`jpeg`, `png`, `rgba-deflate`, or WebCodecs `vp8`/`vp9`/`h264`/`av1`).
+
+### 2. Standard Opt-Out Mode (`streaming.global: false`)
+
+When you set `streaming.global: false` (or `streaming.enabled: false`), Vula delivers standard SSR HTML paired with per-route client chunks:
 
 ```
 Browser (Client)                    Server (Node/Deno)
-─────────────────                   ──────────────────
-app/page.tsx          ──build──►    dist/main.js (bundled)
-src/vula.ts           ──build──►    (included in bundle)
-src/cache.tsx         ──build──►    (included in bundle)
+────────────────                    ──────────────────
+app/page.tsx          ──build──►    .swvula/ (bundled per-page chunks)
+@swavoti/vula/client  ──build──►    VulaLink, Vula.api(), Vula.server(), VulaStreamSurface
 
                       ──HTTP──►
 Vula.api('hello')     ─────────►    app/api/hello.ts (runs here)
 Vula.server('x', 5)   ─────────►    app/api/x.sever.comp.ts (runs here)
 
-app/middleware.ts                    (runs on every request)
+app/middleware.ts                   (runs on every request)
 ```
 
-**Pages** (`page.tsx`) are bundled by Rspack and served as client-side React.
-
-**API routes** (`app/api/*.ts`) are loaded by the Express server and executed when their matching URL is hit.
-
-**Server components** (`*.sever.comp.ts`) are loaded by the Express server and executed when called via `Vula.server()` from the client.
-
-**The manifests** are generated by the CLI. `.vula-routes.json` stays server-side and maps pages, API handlers, server components, and middleware to files. `.vula-routes.client.json` contains only the route patterns and client page paths needed for browser navigation.
+- **Pages** (`page.tsx`) render server-side HTML on initial load and hydrate from per-page client chunks (`.vula.cache.js` + `/chunks/`).
+- **API routes** (`app/api/*.ts`) and **Server components** (`*.sever.comp.ts`) always execute exclusively on the Express server.
+- **Manifests**: `.vula-routes.json` stays private on the server (mapping pages, APIs, server components, middleware, and `streamSurfaces`), while `.vula-routes.client.json` exposes only public page routes needed for WASM navigation.
 
 ---
 
@@ -803,15 +861,16 @@ app/middleware.ts                    (runs on every request)
 
 | Feature | Next.js | Vula.js |
 |---|---|---|
+| Delivery Model | Client JS hydration + RSC | WebSocket Server DOM & Canvas Streaming (zero client app JS by default) |
 | Bundler | Webpack / Turbopack | Rspack (Rust) |
 | Runtime | Node.js only | Deno + Node.js |
-| Routing | File-based (`app/`) | File-based (`app/`) |
+| Routing | File-based (`app/`) + C/JS router | File-based (`app/`) + C/WASM trie |
 | API Routes | `route.ts` with Web API | `hello.ts` with Express API |
-| Server Components | React Server Components | `.sever.comp.ts` files |
+| Server Components | React Server Components | `.sever.comp.ts` + `*.stream.ts` |
 | Caching | ISR / revalidate | Service Worker (client) |
-| Security | None built-in | Script allow list |
+| Security | None built-in | Script allow list + single-use WS stream tickets |
 | Middleware | `middleware.ts` | `middleware.ts` |
-| Config | `next.config.js` | `rspack.config.js` |
+| Config | `next.config.js` | `vulaism.config.yaml` + `rspack.config.js` |
 | Package size | ~300MB node_modules | ~100MB node_modules |
 
 ---
@@ -824,7 +883,7 @@ No. Set `"runtime": "node"` in your `package.json` and use `npm install` + `npx 
 
 ### Can I use a database?
 
-Yes. API routes and server components run on the server with full Node.js/Deno API access. Use any database driver: Prisma, Drizzle, pg, mongoose, etc.
+Yes. API routes, server components, and `.stream.ts` surfaces run on the server with full Node.js/Deno API access. Use any database driver: Prisma, Drizzle, pg, mongoose, etc.
 
 ### Can I use Tailwind CSS?
 
@@ -836,22 +895,24 @@ Put them in `public/`. They're served at the root URL. Example: `public/logo.png
 
 ### Can I deploy to Vercel?
 
-Vula uses Express for the server, so you'd need to adapt it with Vercel's custom server support or deploy as a standalone Node process on Vercel.
+Vula uses Express and persistent WebSockets (`/_vula/stream/ws`) for streaming, so deploy it as a standalone Node/Deno server (Docker, Railway, Fly.io, Render, VPS) or use an adapter if opting out of WebSocket streaming.
 
 ### How do I add authentication?
 
-Use `app/middleware.ts` to check auth tokens on every request, or check auth inside individual API route handlers.
+Use `app/middleware.ts` to check auth tokens on every request, or export `authorize(req)` / `isPublic` inside individual server components and `*.stream.ts` surfaces (also enforced when minting `/_vula/stream/ticket`).
 
-### Can I use React libraries?
+### How does UI authoring work with WebSocket streaming?
 
-Yes. Vula pages are standard React components. Use any React library: React Router (for client-side routing), React Query, Zustand, Framer Motion, etc.
+You author your pages (`app/**/page.tsx`) in familiar JSX/TSX and server surfaces (`*.stream.ts`) in TypeScript/JavaScript. With `streaming.global: true`, Vula runs them on the server and streams DOM patches over WebSockets instead of shipping client JS bundles; if you need client-side libraries (such as browser animation hooks or client state), set `streaming.global: false` in `vulaism.config.yaml` (and optionally mount server-only `<VulaStreamSurface />` views selectively).
 
 ---
 
 ## Troubleshooting
 
+See [troubleshooting.md](file:///home/ngudoliswoga/vulajs/troubleshooting.md) for streaming, build, and runtime diagnostics.
+
 ### JSX Type Errors in Deno
-If you see errors like `JSX element implicitly has type 'any'` or `no interface 'JSX.IntrinsicElements' exists` while using Deno, it means the Deno language server is struggling with strict types for React.
+If you see errors like `JSX element implicitly has type 'any'` or `no interface 'JSX.IntrinsicElements' exists` while using Deno, it means the Deno language server is struggling with strict types for JSX.
 
 **Solution**: Add `"strict": false` to your `deno.json` or `tsconfig.json`:
 
@@ -866,7 +927,7 @@ If you see errors like `JSX element implicitly has type 'any'` or `no interface 
 ```
 
 ### Security Patch: React 19.2.6
-We strongly recommend using **React 19.2.6** or higher. Older versions (like 18.2.0) contain known vulnerabilities that are patched in the 19.x branch. Vula.js defaults to 19.2.6 for all new projects to ensure your application is secure.
+If enabling client-chunk delivery (`streaming.global: false`), we recommend **React 19.2.6** or higher so client dependencies include upstream security fixes. Vula.js defaults to 19.2.6 for new projects.
 
 ---
 
@@ -875,14 +936,13 @@ We strongly recommend using **React 19.2.6** or higher. Older versions (like 18.
 1. Fork the repo
 2. Create a branch: `git checkout -b feature/my-feature`
 3. Make your changes
-4. Test: `vula dev` and verify everything works
+4. Test: `npm test` and `vula dev`
 5. Push and open a PR
 
 ---
 
 ## License
 
-MIT © [Swavoti](https://github.com/nguyenblacks/vulajs)
 MIT © [Swavoti](https://github.com/swavoti/vulajs)
 
 ---
